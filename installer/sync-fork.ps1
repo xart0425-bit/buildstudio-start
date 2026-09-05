@@ -4,7 +4,7 @@
 #
 # 확장은 두 갈래로 나갑니다.
 #   1) VSIX  -> 일반 VS Code (installer\build.ps1 이 만듭니다)
-#   2) 내장본 -> 포크 앱 resources\app\extensions\buildstudio-start  <- 이 스크립트
+#   2) 내장본 -> 포크 앱 resources\app\extensions\buildstudio  <- 이 스크립트
 #
 # 2번은 설치 프로그램이 건드리지 않습니다. 이 스크립트를 돌리지 않으면
 # 포크 앱에는 옛 확장이 그대로 남아, 새로 넣은 버튼이 보이지 않습니다.
@@ -14,10 +14,23 @@ $ErrorActionPreference = "Stop"
 $here    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $project = Split-Path -Parent $here
 
-$targets = @(
-  "Z:\AI_Storage\Project_Folder\VSCode-win32-x64\resources\app\extensions\buildstudio-start",  # 빌드 산출물 (설치 exe 의 재료)
-  "C:\Users\super\AppData\Local\Programs\BUILD STUDIO\resources\app\extensions\buildstudio-start"  # 설치된 앱
+$roots = @(
+  "Z:\AI_Storage\Project_Folder\VSCode-win32-x64\resources\app\extensions",              # 빌드 산출물 (설치 exe 의 재료)
+  "C:\Users\super\AppData\Local\Programs\BUILD STUDIO\resources\app\extensions"          # 설치된 앱
 )
+
+$targets = $roots | ForEach-Object { Join-Path $_ "buildstudio" }
+
+# 옛 이름으로 깔린 내장본을 지웁니다. 2026-09-05 에 확장 id 를
+# buildstudio.buildstudio-start -> buildstudio.buildstudio 로 바꿨습니다. 그대로 두면
+# 같은 화면을 여는 확장이 둘이 되어, 활동 표시줄에 아이콘이 두 개 뜹니다.
+foreach ($r in $roots) {
+  $legacy = Join-Path $r "buildstudio-start"
+  if (Test-Path $legacy) {
+    Remove-Item $legacy -Recurse -Force
+    Write-Host "옛 내장본 삭제: $legacy"
+  }
+}
 
 # 내장본에 들어갈 것만. .vscodeignore 와 같은 기준입니다.
 # extension.js 가 require 하는 것까지 전부 넣습니다. 하나라도 빠지면 포크 앱에서

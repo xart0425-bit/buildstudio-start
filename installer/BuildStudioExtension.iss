@@ -7,7 +7,7 @@
 
 #define AppName        "BUILD STUDIO 확장"
 #define AppVersion     "0.1.0"
-#define ExtensionId    "buildstudio.buildstudio-start"
+#define ExtensionId    "buildstudio.buildstudio"
 #define VsixName       "buildstudio-0.1.0.vsix"
 #ifndef VsixPath
   #define VsixPath     "..\..\BUILD-STUDIO-release\" + VsixName
