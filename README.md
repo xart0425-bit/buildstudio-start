@@ -35,6 +35,12 @@ VS Code 확장이며, 실제 작업은 이미 여러분의 컴퓨터에 깔려 �
 
 <div align="center">
 <img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/flow.png" alt="새 프로젝트 → 계획 → 목업 → 만들기 ⇄ 실행 → GitHub → 배포" width="900">
+
+<br><br>
+
+<img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/shot-start.png" alt="BUILD STUDIO 시작 화면 — 왼쪽 메뉴, 가운데 카드 넷, 아래 문서와 프로젝트 목록" width="900">
+
+<sub>실제 화면입니다. 왼쪽에 메뉴, 가운데에 지금 할 수 있는 것만 골라 낸 카드, 아래에 이 프로젝트의 문서와 최근 프로젝트.</sub>
 </div>
 
 ---
@@ -244,6 +250,12 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 
 그림이 돌아오면 **왼쪽에 그림, 오른쪽에 고칠 말**이 있는 창이 뜹니다. 보면서 적고, 적은 채로 누릅니다. 적어 준 말은 다음 프롬프트 뒤에 붙어 다음 그림을 이끕니다.
 
+<div align="center">
+<img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/shot-mockup.png" alt="목업 검토 창 — 왼쪽에 만들어진 화면 이미지, 오른쪽에 고칠 말을 적는 칸과 [개발 계획서에 반영] 단추" width="900">
+
+<sub>영상 플레이어를 만들어 달라는 한 줄에서 나온 화면. 오른쪽에 고칠 말을 적으면 그 말을 얹어 다시 그립니다.</sub>
+</div>
+
 | 단추 | 하는 일 |
 |:--|:--|
 | 반영 | 그림을 문서의 화면 구성 절에 넣습니다 |
@@ -289,6 +301,12 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 `BUILD STUDIO: 개발 현황` &nbsp;→&nbsp; `docs/PROGRESS.json`
 
 계획서의 단계를 전부 늘어놓고, **아직 안 끝난 단계마다 진행 버튼**을 답니다. 눌러야 할 곳이 화면에 보이므로 "이제 뭘 하지"를 매번 다시 묻지 않아도 됩니다.
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/shot-status.png" alt="개발 현황 — 전체 진행률, 단계별 작업 목록, 안 끝난 작업마다 붙은 [시키기] 단추" width="880">
+
+<sub>위쪽에 진행률과 지금 차례, 아래에 단계별 작업. 안 끝난 줄에는 [시키기] 가 붙어 그 자리에서 시작합니다.</sub>
+</div>
 
 - 이 파일은 **만들기가 시작될 때 자동으로 만들어집니다.** 목업을 계획서에 반영한 뒤든, 목업 없이 만들기를 누른 뒤든 같습니다
 - 위쪽에 전체 진행률 · 완료 단계 수 · 지금 차례
