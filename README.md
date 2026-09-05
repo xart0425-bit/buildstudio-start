@@ -10,7 +10,7 @@
 ![Codex](https://img.shields.io/badge/Codex-%EB%AA%A9%EC%97%85%C2%B7%EC%84%A4%EA%B3%84-2A3038?style=flat-square&labelColor=0B0D10)
 ![Gemini](https://img.shields.io/badge/Gemini-%EB%AA%A9%EC%97%85%C2%B7%EC%84%A4%EA%B3%84-2A3038?style=flat-square&labelColor=0B0D10)
 
-**[설치](#설치)** &nbsp;·&nbsp; **[화면](#화면-한-바퀴)** &nbsp;·&nbsp; **[메뉴별 설명](#메뉴별-설명)** &nbsp;·&nbsp; **[개발 현황 단계](#개발-현황-단계-페이지)** &nbsp;·&nbsp; **[예제](#처음부터-끝까지--time-timer-만들기)** &nbsp;·&nbsp; **[설정](#설정)**
+**[설치](#설치)** &nbsp;·&nbsp; **[화면](#화면-한-바퀴)** &nbsp;·&nbsp; **[메뉴별 설명](#메뉴별-설명)** &nbsp;·&nbsp; **[진행 화면](#진행-화면)** &nbsp;·&nbsp; **[예제](#처음부터-끝까지--time-timer-만들기)** &nbsp;·&nbsp; **[설정](#설정)**
 
 </div>
 
@@ -127,10 +127,22 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 <td><code>docs/mockups/</code></td>
 </tr>
 <tr>
+<td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-mockup.png" width="34"></td>
+<td><a href="#menu-mockup-open"><b>목업 다시 보기</b></a></td>
+<td>만들어 둔 목업을 다시 열어 반영하거나 고칩니다</td>
+<td>—</td>
+</tr>
+<tr>
 <td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-build.png" width="34"></td>
 <td><a href="#menu-build"><b>만들기</b></a></td>
 <td>계획서의 다음 단계 하나를 실제로 만듭니다</td>
 <td><code>docs/BUILD-LOG.md</code></td>
+</tr>
+<tr>
+<td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-build.png" width="34"></td>
+<td><a href="#menu-status"><b>개발 현황</b></a></td>
+<td>계획서의 단계를 늘어놓고 그 자리에서 진행합니다</td>
+<td><code>docs/PROGRESS.json</code></td>
 </tr>
 <tr>
 <td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-docs.png" width="34"></td>
@@ -228,11 +240,32 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 <img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/mockup-flow.png" alt="프롬프트 확인 → 이미지 생성 → 보여주기 → 반영" width="900">
 </div>
 
+보내기 전에 **무엇을 그릴지 적힌 글이 창 하나로** 뜹니다. 그 자리에서 고치고 그 자리에서 보냅니다 — 글은 텍스트 영역에, 단추는 바로 아래에 있습니다.
+
+그림이 돌아오면 **왼쪽에 그림, 오른쪽에 고칠 말**이 있는 창이 뜹니다. 보면서 적고, 적은 채로 누릅니다. 적어 준 말은 다음 프롬프트 뒤에 붙어 다음 그림을 이끕니다.
+
+| 단추 | 하는 일 |
+|:--|:--|
+| 반영 | 그림을 문서의 화면 구성 절에 넣습니다 |
+| 다시 만들기 | 적어 준 말을 얹어 다시 그립니다 |
+| 프롬프트 고치기 | 보낼 글을 통째로 열어 고칩니다 |
+| 버리기 | 그림 파일을 지웁니다 |
+
 **반영을 누르기 전까지 문서는 손대지 않습니다.** 먼저 고쳐 두고 나중에 무르는 방식은, 마음에 안 드는 그림이 잠깐이라도 계획서에 남습니다.
 
 문서가 둘 다 있으면 어느 쪽을 바탕으로 할지 묻습니다. 역설계 보고서를 고르면 분석 대상이 아니라 **보고서가 제안한 더 나은 제품**의 화면을 그립니다.
 
 그리고 이 그림은 장식이 아닙니다 — 다음 `만들기` 가 이 화면을 보고 구현합니다.
+
+<a name="menu-mockup-open"></a>
+
+### <img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-mockup.png" height="24"> 목업 다시 보기
+
+`BUILD STUDIO: 목업 다시 보기`
+
+`docs/mockups/` 에 그림이 있을 때만 나타납니다. 만들어 둔 목업을 **다시 열어** 그 자리에서 반영하거나, 고칠 말을 적어 다시 만듭니다.
+
+창을 한 번 닫으면 다시 고를 길이 없어서, 그림이 멀쩡히 남아 있는데도 처음부터 새로 만들어야 했습니다.
 
 <a name="menu-build"></a>
 
@@ -246,6 +279,22 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 - 이미 있는 코드를 갈아엎어야 하면 반드시 먼저 묻습니다.
 - 껍데기만 만들고 "완성"이라 하지 않습니다. 의존성을 넣으면 실제로 설치하고 실행해서 확인합니다.
 - 끝나면 `docs/BUILD-LOG.md` 에 **만든 것 · 확인한 것 · 남은 것**을 덧붙입니다. 다음 `만들기` 가 그 로그를 읽고 이어서 갑니다.
+
+<a name="menu-status"></a>
+
+### <img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-build.png" height="24"> 개발 현황
+
+`BUILD STUDIO: 개발 현황` &nbsp;→&nbsp; `docs/PROGRESS.json`
+
+계획서의 단계를 전부 늘어놓고, **아직 안 끝난 단계마다 진행 버튼**을 답니다. 눌러야 할 곳이 화면에 보이므로 "이제 뭘 하지"를 매번 다시 묻지 않아도 됩니다.
+
+- 위쪽에 전체 진행률 · 완료 단계 수 · 지금 차례
+- 단계마다 작업 목록과 끝난 표시. 계획서에 없던 것은 `계획 밖` 으로 따로 답니다
+- 파일이 바뀌면 창이 스스로 다시 그립니다
+
+화면이 코드를 짐작해 그리면 실제와 어긋나기 시작하므로, 무엇이 끝났는지는 `docs/PROGRESS.json` 한 곳에만 적어 둡니다.
+
+**모드 토글** — 진행 버튼 옆에 `하나씩 확인` 과 `자동으로` 가 있습니다. `자동으로` 는 파일을 고칠 때마다 되묻지 않고 갑니다 (`--permission-mode acceptEdits`). 명령 실행은 그대로 묻습니다. Shift+Tab 으로만 바꿀 수 있던 것을 눌러야 할 버튼 옆으로 꺼내 둔 것입니다 — 무엇이 켜져 있는지 보이지 않으면, 되묻는 창이 뜨는 것도 안 뜨는 것도 다 고장처럼 읽힙니다.
 
 <a name="menu-docs"></a>
 
@@ -332,7 +381,7 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 
 ---
 
-## 개발 현황 단계 페이지
+## 진행 화면
 
 무엇을 시작하든 화면은 **진행 화면**으로 바뀝니다. 터미널을 들여다보지 않아도 지금 어디쯤인지 보이게 하는 것이 이 화면의 목적입니다.
 
@@ -346,7 +395,7 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 | ◐ | 끝난 단계 |
 | ○ | 아직 오지 않은 단계 |
 
-맨 위의 가느다란 선은 계속 흐릅니다. 그 움직임은 `status.json` 과 무관합니다 — 신호가 안 와도 화면은 계속 숨을 쉬어야 멈춘 것으로 보이지 않기 때문입니다. 경과 시간은 1초마다 갱신됩니다.
+맨 위의 가느다란 선은 일하는 동안 계속 흐릅니다. 그 움직임은 `status.json` 과 무관합니다 — 신호가 안 와도 화면은 계속 숨을 쉬어야 멈춘 것으로 보이지 않기 때문입니다. **끝나면 이 선도 멈춥니다** — 결과는 나왔는데 선만 계속 돌면 아직 일하는 중으로 읽힙니다. 경과 시간은 1초마다 갱신됩니다.
 
 ### 어떻게 이걸 아나
 
@@ -459,6 +508,7 @@ AI 는 단계에 **들어갈 때마다** 워크스페이스의 `.buildstudio/sta
 |:--|:--|:--|
 | `buildstudio.showOnStartup` | `true` | 열 때 시작 화면을 자동으로 띄웁니다 |
 | `buildstudio.runIn` | `panel` | `panel` — 오른쪽 Claude 창에서 진행<br>`terminal` — 터미널에서 진행 |
+| `buildstudio.autoRun` | `false` | 개발 현황 화면의 `자동으로`. 파일 수정을 묻지 않습니다.<br>Claude 창은 다음 새 대화부터 적용됩니다 |
 | `buildstudio.planEngine` | `auto` | 설계를 어떤 AI 로: `auto` · `claude` · `codex` · `gemini` |
 | `buildstudio.planModel` | (빈값) | 설계에 쓸 모델 이름. 예: `opus`, `gpt-5.1-codex`, `gemini-2.5-pro` |
 | `buildstudio.imageEngine` | `auto` | 목업 이미지를 어떤 AI 로: `auto` · `codex` · `gemini` |
@@ -475,6 +525,7 @@ AI 는 단계에 **들어갈 때마다** 워크스페이스의 `.buildstudio/sta
 extension.js      시작 화면 · 진행 감시 · 실행 · 배포 · GitHub · 프로젝트 관리
 engines.js        어떤 AI 로 돌릴지 한 곳에서 판정 (설치 · 로그인 · 명령 조립)
 mockup.js         문서를 읽어 목업 프롬프트를 만들고, 물어본 뒤 문서에 반영
+status.js         개발 현황 화면 — 계획서 단계를 늘어놓고 그 자리에서 진행
 codexImages.js    Codex 로 이미지 만들기
 geminiImages.js   Gemini API 로 이미지 만들기
 

@@ -22,8 +22,10 @@ New-Item -ItemType Directory -Force $release | Out-Null
 
 # 1. 문법 검사
 Write-Host "[1/4] 문법 검사"
-& $node --check (Join-Path $project "extension.js")
-if (-not $?) { throw "extension.js 문법 오류" }
+foreach ($js in @("extension.js", "mockup.js", "status.js", "engines.js")) {
+  & $node --check (Join-Path $project $js)
+  if (-not $?) { throw "$js 문법 오류" }
+}
 
 # 2. 설치 프로그램 아이콘 (확장 아이콘에서 생성)
 Write-Host "[2/4] 설치 프로그램 아이콘"
