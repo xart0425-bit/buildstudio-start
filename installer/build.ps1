@@ -40,7 +40,7 @@ try { & $node $vsce package --out $vsix --no-dependencies } finally { Pop-Locati
 
 # 4. 설치 프로그램 컴파일
 Write-Host "[4/4] 설치 프로그램 컴파일"
-& $iscc "/DVsixPath=$vsix" (Join-Path $here "BuildStudioExtension.iss")
+& $iscc "/DVsixPath=$vsix" "/DAppVersion=$version" (Join-Path $here "BuildStudioExtension.iss")
 if (-not $?) { throw "ISCC 실패" }
 
 Write-Host ""

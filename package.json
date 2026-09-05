@@ -2,7 +2,7 @@
   "name": "buildstudio",
   "displayName": "BUILD STUDIO",
   "description": "아이디어에서 개발 계획까지 — 계획 · 역설계 · 실행 · 배포를 한 화면에서. Turn an idea into a dev plan, working code and an installer, inside VS Code (Korean UI).",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "buildstudio",
   "license": "MIT",
   "repository": {
@@ -84,6 +84,14 @@
         "title": "BUILD STUDIO: 화면 목업 만들기"
       },
       {
+        "command": "buildstudio.mockupOpen",
+        "title": "BUILD STUDIO: 목업 다시 보기"
+      },
+      {
+        "command": "buildstudio.status",
+        "title": "BUILD STUDIO: 개발 현황"
+      },
+      {
         "command": "buildstudio.engines",
         "title": "BUILD STUDIO: AI 모델 고르기"
       },
@@ -124,6 +132,11 @@
           ],
           "default": "panel",
           "description": "계획 · 역설계 · 배포를 어디서 진행할지."
+        },
+        "buildstudio.autoRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "개발 현황 화면의 [자동으로]. 파일을 고칠 때마다 묻지 않고 진행합니다. Claude 창은 다음 새 대화부터 적용됩니다."
         },
         "buildstudio.planEngine": {
           "type": "string",

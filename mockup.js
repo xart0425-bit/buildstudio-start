@@ -20,6 +20,9 @@ const engines = require("./engines");
 const OUT = "docs/mockups";
 const HEADING = "## 화면 목업";
 
+/** 고쳐 달라는 말을 붙일 때 쓰는 표식. 다시 고칠 때 앞의 요청을 잘라내는 자리이기도 하다. */
+const REVISION = "Revision request — the previous attempt was not right. Apply these changes:";
+
 /** 목업의 바탕이 될 수 있는 문서들. 위에 있는 것이 기본값이다. */
 const SOURCES = [
   {
@@ -50,6 +53,37 @@ function root() {
 /** 이 폴더에 목업의 바탕이 될 문서가 있는지. 시작 화면이 카드를 낼지 정할 때도 쓴다. */
 function sourcesIn(base) {
   return SOURCES.filter((s) => fs.existsSync(path.join(base, s.file)));
+}
+
+/**
+ * 이미 만들어 둔 목업 이미지들. 최근 것이 앞에 온다.
+ *
+ * 한 번 만든 목업을 다시 볼 길이 없었다. 그림은 docs/mockups/ 에 남아 있는데 그것을 놓고
+ * [반영 / 재생성] 을 고르던 창은 닫으면 끝이라, 다시 고르려면 목업을 처음부터 새로 만드는
+ * 수밖에 없었다. 시작 화면이 이 목록으로 [목업 다시 보기] 카드를 낼지 정한다.
+ */
+function mockupsIn(base) {
+  const dir = path.join(base, OUT);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return []; // 폴더가 없으면 만든 적이 없는 것이다.
+  }
+  return names
+    .filter((f) => /\.(png|jpe?g|webp)$/i.test(f))
+    .map((f) => {
+      const full = path.join(dir, f);
+      let at = 0;
+      try {
+        at = fs.statSync(full).mtimeMs;
+      } catch {
+        // 방금 지워졌으면 맨 뒤로 보낸다.
+      }
+      return { full, at };
+    })
+    .sort((a, b) => b.at - a.at)
+    .map((x) => x.full);
 }
 
 /** 둘 다 있으면 고르게 한다. 하나뿐이면 묻지 않는다. */
@@ -214,19 +248,292 @@ function injectInto(docPath, files, note) {
   return "갈아 끼웠습니다";
 }
 
-/** 프롬프트를 편집기에 띄우고 보낼지 묻는다. 되돌아온 문자열이 실제로 보낼 내용이다. */
+/**
+ * 프롬프트를 창 하나에 띄우고, 그 창 안에서 고치고 그 창 안에서 보내게 한다.
+ *
+ * 예전에는 편집기에 문서를 띄우고 알림으로 물었다. 고칠 내용은 화면 한가운데 있는데
+ * 시작 단추만 우측 하단 알림에 떨어져 있어서, 문서만 보고 "아무 일도 안 일어난다"고
+ * 여기기 쉬웠다. 고치는 곳과 누르는 곳은 한 창에 있어야 다음에 무엇을 할지가 보인다.
+ */
 async function confirmPrompt(draft, again) {
-  const doc = await vscode.workspace.openTextDocument({ content: draft, language: "markdown" });
-  await vscode.window.showTextDocument(doc, { preview: false });
-
-  const go = await vscode.window.showInformationMessage(
-    again
-      ? "고칠 것을 고친 뒤 다시 만들기를 눌러주세요."
-      : "이 내용으로 목업을 만듭니다. 고칠 것이 있으면 편집기에서 고친 뒤 눌러주세요.",
-    "목업 만들기",
-    "취소"
+  const view = vscode.window.createWebviewPanel(
+    "buildstudioMockupPrompt",
+    "화면 목업 · 무엇을 그릴지",
+    vscode.ViewColumn.Active,
+    { enableScripts: true, retainContextWhenHidden: true }
   );
-  return go === "목업 만들기" ? doc.getText() : null;
+
+  const text = String(draft).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  view.webview.html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<style>
+  body { margin: 0; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column;
+         font-family: var(--vscode-font-family); color: var(--vscode-foreground);
+         background: var(--vscode-editor-background); }
+  header { padding: 1.5rem 1.7rem .9rem; }
+  h1 { margin: 0 0 .45rem; font-size: 1.05rem; font-weight: 500; letter-spacing: .01em; }
+  header p { margin: 0; font-size: .82rem; font-weight: 300; opacity: .6; line-height: 1.65; }
+  textarea {
+    flex: 1; min-height: 0; margin: 0 1.7rem; padding: 1rem 1.15rem; resize: none;
+    font-family: var(--vscode-editor-font-family, monospace); font-size: .84rem; line-height: 1.7;
+    color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.25)); border-radius: 4px;
+  }
+  textarea:focus { outline: none; border-color: var(--vscode-focusBorder); }
+  footer { display: flex; align-items: center; gap: .7rem; padding: 1rem 1.7rem 1.5rem; }
+  .hint { flex: 1; font-size: .74rem; font-weight: 300; opacity: .45; }
+  button { font-family: inherit; font-size: .85rem; padding: .5rem 1.25rem;
+           border: none; border-radius: 3px; cursor: pointer; }
+  .go { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .go:hover { background: var(--vscode-button-hoverBackground); }
+  .cancel { background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground); }
+  .cancel:hover { background: var(--vscode-button-secondaryHoverBackground); }
+</style></head>
+<body>
+  <header>
+    <h1>${again ? "고칠 것을 고친 뒤 다시 만들어주세요" : "이 내용으로 목업을 만듭니다"}</h1>
+    <p>아래 글이 그대로 이미지 모델에 갑니다. 여기서 고치고, 여기서 보내면 됩니다.</p>
+  </header>
+  <textarea id="prompt" spellcheck="false">${text}</textarea>
+  <footer>
+    <span class="hint">Ctrl+Enter 로도 보낼 수 있습니다</span>
+    <button class="cancel" id="cancel">취소</button>
+    <button class="go" id="go">${again ? "다시 만들기" : "목업 만들기"}</button>
+  </footer>
+<script>
+  const vs = acquireVsCodeApi();
+  const box = document.getElementById("prompt");
+  const send = () => vs.postMessage({ type: "go", text: box.value });
+  document.getElementById("go").addEventListener("click", send);
+  document.getElementById("cancel").addEventListener("click", () => vs.postMessage({ type: "cancel" }));
+  box.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") send();
+  });
+  box.focus();
+</script>
+</body></html>`;
+
+  // 창을 닫는 것도 대답이다 — 취소로 본다. 어느 쪽으로 끝나든 한 번만 답한다.
+  return new Promise((resolve) => {
+    let answered = false;
+    const finish = (value) => {
+      if (answered) return;
+      answered = true;
+      resolve(value);
+      view.dispose();
+    };
+    view.webview.onDidReceiveMessage((m) => finish(m && m.type === "go" ? String(m.text) : null));
+    view.onDidDispose(() => finish(null));
+  });
+}
+
+/**
+ * 되돌아온 그림을 놓고 무엇을 할지 정하는 창.
+ *
+ * 예전에는 이미지를 편집기에 열어 두고 우측 하단 알림으로 물었다. 그림은 화면 한쪽에,
+ * 단추는 반대쪽 구석에, 고칠 말을 적을 곳은 아예 없었다. 마음에 안 드는 이유를 전할
+ * 방법이 "버리고 다시 만들기" 뿐이라, 같은 프롬프트로 같은 그림을 다시 받곤 했다.
+ *
+ * 그래서 왼쪽에 그림을, 오른쪽에 고칠 말과 단추를 함께 둔다. 보면서 적고, 적은 채로
+ * 누른다. 적어 준 말은 다음 프롬프트 맨 뒤에 붙어 다음 그림을 이끈다.
+ *
+ * 돌려주는 값은 { action, notes } —
+ *   apply      문서에 반영
+ *   regenerate 적어 준 말을 얹어 다시 만들기
+ *   edit       프롬프트를 통째로 열어 고치기
+ *   discard    버리기
+ *   keep       창을 그냥 닫음 (파일은 남기고 문서는 건드리지 않음)
+ */
+async function reviewMockup(files, source, engineName) {
+  const view = vscode.window.createWebviewPanel(
+    "buildstudioMockupReview",
+    "화면 목업 · 이대로 반영할까요",
+    vscode.ViewColumn.Active,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.file(path.dirname(files[0]))],
+    }
+  );
+
+  const shots = files.map((f) => ({
+    uri: view.webview.asWebviewUri(vscode.Uri.file(f)).toString(),
+    name: path.basename(f),
+  }));
+
+  // 여러 장일 때만 아래에 필름을 깐다. 한 장뿐인데 고르라고 두면 고를 것이 없다.
+  const strip =
+    shots.length > 1
+      ? '<div class="strip">' +
+        shots
+          .map(
+            (s, i) =>
+              '<button class="' + (i === 0 ? "on" : "") + '" data-i="' + i +
+              '"><img src="' + s.uri + '" alt=""></button>'
+          )
+          .join("") +
+        "</div>"
+      : "";
+
+  view.webview.html = `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src ${view.webview.cspSource}; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: flex;
+         font-family: var(--vscode-font-family); color: var(--vscode-foreground);
+         background: var(--vscode-editor-background); }
+
+  main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .8rem; padding: 1.6rem; }
+  .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+           padding: .9rem; border-radius: 6px;
+           border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.22));
+           background: var(--vscode-editorWidget-background, rgba(128,128,128,.06)); }
+  .stage img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; border-radius: 3px; }
+  .strip { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .strip button { padding: 2px; line-height: 0; cursor: pointer; border-radius: 5px;
+                  background: none; border: 1px solid transparent; }
+  .strip button.on { border-color: var(--vscode-focusBorder); }
+  .strip img { height: 54px; width: auto; display: block; border-radius: 3px; }
+  .meta { display: flex; align-items: center; gap: .55rem; font-size: .74rem; font-weight: 300; opacity: .5; }
+  .meta button { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+                 font-size: .74rem; color: inherit; opacity: .85;
+                 text-decoration: underline; text-underline-offset: 3px; }
+
+  aside { width: 21.5rem; flex: none; display: flex; flex-direction: column; gap: .75rem;
+          padding: 1.6rem 1.7rem;
+          border-left: 1px solid var(--vscode-widget-border, rgba(128,128,128,.22)); }
+  h1 { margin: 0; font-size: 1.02rem; font-weight: 500; letter-spacing: .01em; }
+  .lead { margin: 0; font-size: .8rem; font-weight: 300; opacity: .6; line-height: 1.65; }
+  label { margin-top: .35rem; font-size: .74rem; opacity: .55; letter-spacing: .02em; }
+  textarea { flex: 1; min-height: 7rem; padding: .85rem .95rem; resize: none;
+             font-family: inherit; font-size: .83rem; line-height: 1.7;
+             color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+             border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.25)); border-radius: 4px; }
+  textarea:focus { outline: none; border-color: var(--vscode-focusBorder); }
+  .acts { display: flex; flex-direction: column; gap: .5rem; }
+  .act { width: 100%; font-family: inherit; font-size: .85rem; padding: .62rem 1rem;
+         border: none; border-radius: 3px; cursor: pointer; }
+  .go { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .go:hover { background: var(--vscode-button-hoverBackground); }
+  .again { background: var(--vscode-button-secondaryBackground);
+           color: var(--vscode-button-secondaryForeground); }
+  .again:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .minor { display: flex; justify-content: space-between; }
+  .minor button { background: none; border: none; padding: .15rem 0; cursor: pointer;
+                  font-family: inherit; font-size: .74rem; font-weight: 300;
+                  color: var(--vscode-foreground); opacity: .45; }
+  .minor button:hover { opacity: .85; text-decoration: underline; text-underline-offset: 3px; }
+  .hint { font-size: .72rem; font-weight: 300; opacity: .38; }
+</style></head>
+<body>
+  <main>
+    <div class="stage"><img id="shot" src="${shots[0].uri}" alt="목업"></div>
+    ${strip}
+    <div class="meta">
+      <span id="name">${shots[0].name}</span>
+      <span>·</span>
+      <span>${engineName ? `${engineName} 생성` : "이전에 만든 목업"}</span>
+      <span>·</span>
+      <button id="open">원본 크기로 열기</button>
+    </div>
+  </main>
+
+  <aside>
+    <h1>이 목업, 어떤가요?</h1>
+    <p class="lead">마음에 들면 ${source.label}에 넣습니다. 아니라면 고칠 점을 적어 다시 만듭니다.</p>
+
+    <label for="notes">추가 · 수정할 내용</label>
+    <textarea id="notes" spellcheck="false"
+      placeholder="예) 왼쪽에 사이드바를 넣고, 가운데 원판을 더 크게. 색은 더 차분하게."></textarea>
+    <span class="hint">Ctrl+Enter 로도 다시 만듭니다</span>
+
+    <div class="acts">
+      <button class="act go" id="apply">${source.label}에 반영</button>
+      <button class="act again" id="regen">이 내용으로 다시 만들기</button>
+      <div class="minor">
+        <button id="edit">프롬프트 전체 고치기</button>
+        <button id="discard">버리기</button>
+      </div>
+    </div>
+  </aside>
+
+<script>
+  const vs = acquireVsCodeApi();
+  const SHOTS = ${JSON.stringify(shots)};
+  const shot = document.getElementById("shot");
+  const name = document.getElementById("name");
+  const notes = document.getElementById("notes");
+  let at = 0;
+
+  document.querySelectorAll(".strip button").forEach((b) => {
+    b.addEventListener("click", () => {
+      at = Number(b.dataset.i);
+      shot.src = SHOTS[at].uri;
+      name.textContent = SHOTS[at].name;
+      document.querySelectorAll(".strip button").forEach((o) => o.classList.remove("on"));
+      b.classList.add("on");
+    });
+  });
+
+  const say = (action) => vs.postMessage({ type: action, notes: notes.value });
+  document.getElementById("apply").addEventListener("click", () => say("apply"));
+  document.getElementById("regen").addEventListener("click", () => say("regenerate"));
+  document.getElementById("edit").addEventListener("click", () => say("edit"));
+  document.getElementById("discard").addEventListener("click", () => say("discard"));
+  document.getElementById("open").addEventListener("click", () => vs.postMessage({ type: "open", index: at }));
+
+  notes.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") say("regenerate");
+  });
+  notes.focus();
+</script>
+</body></html>`;
+
+  const ANSWERS = ["apply", "regenerate", "edit", "discard"];
+
+  // 창을 닫는 것도 대답이다 — 그대로 두라는 뜻으로 본다. 어느 쪽으로 끝나든 한 번만 답한다.
+  return new Promise((resolve) => {
+    let answered = false;
+    const finish = (value) => {
+      if (answered) return;
+      answered = true;
+      resolve(value);
+      view.dispose();
+    };
+
+    view.webview.onDidReceiveMessage(async (m) => {
+      // 원본 보기는 대답이 아니다. 창은 그대로 두고 이미지만 옆에 띄운다.
+      if (m && m.type === "open") {
+        const file = files[Number(m.index) || 0] || files[0];
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(file), {
+          viewColumn: vscode.ViewColumn.Beside,
+          preview: true,
+        });
+        return;
+      }
+      if (m && ANSWERS.includes(m.type)) finish({ action: m.type, notes: String(m.notes || "") });
+    });
+    view.onDidDispose(() => finish({ action: "keep", notes: "" }));
+  });
+}
+
+/**
+ * 고칠 말을 프롬프트 맨 뒤에 얹는다.
+ *
+ * 뒤에 두는 이유는 늦게 읽힌 말이 앞의 것을 덮기 때문이다. 여러 번 고쳐도 표식으로
+ * 앞의 요청을 잘라내고 새 것만 남긴다 — 서로 부딪히는 요청이 쌓이면 그림이 흐려진다.
+ */
+function revise(prompt, notes) {
+  const base = String(prompt).split(REVISION)[0].replace(/\s*$/, "");
+  const text = String(notes || "").trim();
+  if (!text) return base;
+  return `${base}\n\n${REVISION}\n${text}\n\nGenerate the revised image now, save it, then reply with only the saved file path.`;
 }
 
 /** 지운다. 이미 없어졌어도 조용히 넘어간다. */
@@ -244,8 +551,12 @@ function discard(files) {
  * 목업 만들기 전체 흐름.
  *
  * extra 를 주면 그 요청이 앞장서고, 문서는 배경으로만 실린다.
+ *
+ * hooks.onApplied 를 주면 문서에 넣은 뒤 그것을 부른다. 반영이 끝이 아니라 다음 일로
+ * 이어지는 자리라서다 — 시작 화면은 여기서 [만들기]로 넘어간다. 안 주면 예전처럼
+ * 알림만 띄우고 끝낸다 (명령 팔레트에서 부른 경우).
  */
-async function runMockup(extra) {
+async function runMockup(extra, hooks) {
   const folder = root();
   if (!folder) {
     const pick = await vscode.window.showWarningMessage(
@@ -359,17 +670,11 @@ async function runMockup(extra) {
       continue;
     }
 
-    // 먼저 눈으로 보게 한다. 무엇을 반영할지 모른 채 반영을 누를 수는 없다.
-    await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(result.files[0]));
+    // 그림과 고칠 말을 한 창에 놓는다. 보는 곳과 적는 곳이 갈라져 있으면
+    // 무엇을 보고 무엇을 적는지가 흐려진다.
+    const review = await reviewMockup(result.files, source, engineName);
 
-    const pick = await vscode.window.showInformationMessage(
-      `목업 ${result.files.length}장을 만들었습니다. ${source.label}에 반영할까요?`,
-      `${source.label}에 반영`,
-      "버리고 다시 만들기",
-      "버리기"
-    );
-
-    if (pick === "버리기") {
+    if (review.action === "discard") {
       discard(result.files);
       vscode.window.showInformationMessage(
         `목업을 버렸습니다. ${source.label}는 그대로입니다.`
@@ -377,17 +682,25 @@ async function runMockup(extra) {
       return;
     }
 
-    if (pick === "버리고 다시 만들기") {
+    // 적어 준 말이 다음 그림을 이끈다.
+    if (review.action === "regenerate") {
       discard(result.files);
-      const next = await confirmPrompt(prompt, true);
+      prompt = revise(prompt, review.notes);
+      continue;
+    }
+
+    // 몇 줄로는 안 되는 것도 있다. 그럴 때는 프롬프트를 통째로 연다.
+    if (review.action === "edit") {
+      discard(result.files);
+      const next = await confirmPrompt(revise(prompt, review.notes), true);
       if (!next) return;
       prompt = next;
       continue;
     }
 
-    // 알림을 그냥 닫았으면 아무것도 하지 않는다. 파일은 남겨 둔다 —
+    // 창을 그냥 닫았으면 아무것도 하지 않는다. 파일은 남겨 둔다 —
     // 문서에 넣지 않았을 뿐, 나중에 직접 쓸 수 있다.
-    if (pick !== `${source.label}에 반영`) {
+    if (review.action !== "apply") {
       vscode.window.showInformationMessage(
         `목업은 ${OUT}/ 에 남겨두었습니다. ${source.label}에는 넣지 않았습니다.`
       );
@@ -407,15 +720,98 @@ async function runMockup(extra) {
       `${when} · Codex(ChatGPT) 생성 · 다시 만들려면 BUILD STUDIO 에서 [화면 목업]`
     );
 
-    const after = await vscode.window.showInformationMessage(
-      `${source.label}에 ${how}.`,
-      "문서 보기"
-    );
-    if (after === "문서 보기") {
-      await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(docPath));
-    }
+    await applied(docPath, source, how, hooks);
     return;
   }
 }
 
-module.exports = { runMockup, buildPrompt, designSection, injectInto, sourcesIn, SOURCES };
+/**
+ * 문서에 넣은 다음.
+ *
+ * 부르는 쪽이 이어갈 일을 주면 그리로 넘긴다. 없으면 알림만 띄운다.
+ */
+async function applied(docPath, source, how, hooks) {
+  if (hooks && typeof hooks.onApplied === "function") {
+    await hooks.onApplied({ docPath, source, how });
+    return;
+  }
+
+  const after = await vscode.window.showInformationMessage(
+    `${source.label}에 ${how}.`,
+    "문서 보기"
+  );
+  if (after === "문서 보기") {
+    await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(docPath));
+  }
+}
+
+/**
+ * 이미 있는 목업을 다시 펼친다.
+ *
+ * 새로 그리지 않는다 — docs/mockups/ 에 남아 있는 그림을 그대로 놓고 다시 고르게 한다.
+ * 그림을 만드는 데 시간과 돈이 드는데, 마음을 정하려고 다시 볼 때마다 새로 그리는 것은
+ * 낭비다. 고쳐 달라고 하면 그때 runMockup 으로 넘긴다.
+ */
+async function reopenMockup(hooks) {
+  const folder = root();
+  if (!folder) return;
+
+  const base = folder.uri.fsPath;
+  const files = mockupsIn(base);
+  if (!files.length) {
+    vscode.window.showInformationMessage(
+      `아직 만들어 둔 목업이 없습니다. BUILD STUDIO 에서 [화면 목업]으로 먼저 만들어 주세요.`
+    );
+    return;
+  }
+
+  const found = sourcesIn(base);
+  const source = await pickSource(found);
+  if (!source) return;
+
+  const review = await reviewMockup(files, source, "");
+
+  if (review.action === "discard") {
+    discard(files);
+    vscode.window.showInformationMessage(`목업을 버렸습니다. ${source.label}는 그대로입니다.`);
+    return;
+  }
+
+  // 고쳐 달라는 말이 붙었으면 처음 흐름으로 넘긴다. 여기서는 그릴 수 없다 —
+  // 그림을 만든 프롬프트가 남아 있지 않기 때문이다.
+  if (review.action === "regenerate" || review.action === "edit") {
+    await runMockup(review.notes, hooks);
+    return;
+  }
+
+  if (review.action !== "apply") return; // 그냥 닫았으면 그대로 둔다.
+
+  const when = new Date().toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const docPath = path.join(base, source.file);
+  const how = injectInto(
+    docPath,
+    files,
+    `${when} · 다시 반영 · 다시 만들려면 BUILD STUDIO 에서 [화면 목업]`
+  );
+
+  await applied(docPath, source, how, hooks);
+}
+
+module.exports = {
+  runMockup,
+  reopenMockup,
+  reviewMockup,
+  buildPrompt,
+  designSection,
+  injectInto,
+  revise,
+  sourcesIn,
+  mockupsIn,
+  SOURCES,
+};

@@ -92,9 +92,12 @@ const PLAN_ENGINES = {
         exists(".claude.json") ||
         !!process.env.ANTHROPIC_API_KEY,
     }),
-    line: ({ prompt, model, sessionId }) => {
+    // auto 는 화면의 [자동으로] 다. Shift+Tab 으로 켜는 것과 같은 자리를 flag 로 켠다 —
+    // 파일을 고칠 때마다 되묻지 않는다. 명령 실행은 그대로 묻는다.
+    line: ({ prompt, model, sessionId, auto }) => {
       const parts = ["claude"];
       if (model) parts.push("--model", model);
+      if (auto) parts.push("--permission-mode", "acceptEdits");
       if (sessionId) parts.push("--session-id", sessionId);
       parts.push('"' + prompt + '"');
       return parts.join(" ");

@@ -3,8 +3,9 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
-const { runMockup, sourcesIn } = require("./mockup");
+const { runMockup, reopenMockup, sourcesIn, mockupsIn } = require("./mockup");
 const engines = require("./engines");
+const status = require("./status");
 
 /**
  * BUILD STUDIO 시작 화면.
@@ -262,6 +263,51 @@ function runInSetting() {
   return vscode.workspace.getConfiguration("buildstudio").get("runIn", "panel");
 }
 
+/** 되묻지 않고 진행하는 모드인지. Shift+Tab 대신 화면의 [자동으로] 가 켜고 끈다. */
+function autoRun() {
+  return vscode.workspace.getConfiguration("buildstudio").get("autoRun", false);
+}
+
+/**
+ * 모드를 바꾼다.
+ *
+ * 두 곳에 적어야 실제로 바뀐다. 터미널로 도는 것은 실행할 때 flag 를 붙이면 되지만,
+ * Claude 창은 확장이 건드릴 수 없다 — 켜고 끄는 명령이 없다. 그쪽은 새 대화가 시작될
+ * 때 .claude/settings.local.json 의 defaultMode 를 읽으므로 거기에 남긴다. 그래서
+ * 창 쪽은 지금 하던 대화가 아니라 다음 대화부터 바뀐다 — 화면에도 그렇게 적어둔다.
+ */
+async function setAutoRun(on) {
+  await vscode.workspace
+    .getConfiguration("buildstudio")
+    .update("autoRun", on, vscode.ConfigurationTarget.Global);
+  writeClaudeMode(on);
+}
+
+function writeClaudeMode(on) {
+  const folder = root();
+  if (!folder) return;
+  try {
+    const dir = path.join(folder.uri.fsPath, ".claude");
+    const file = path.join(dir, "settings.local.json");
+    let data = {};
+    if (fs.existsSync(file)) {
+      // 읽지 못한 파일은 손대지 않는다. 통째로 덮어쓰면 거기 있던 다른 설정이 사라진다.
+      try {
+        data = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")) || {};
+      } catch {
+        return;
+      }
+    }
+    const perms = data.permissions && typeof data.permissions === "object" ? data.permissions : {};
+    perms.defaultMode = on ? "acceptEdits" : "default";
+    data.permissions = perms;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", "utf8");
+  } catch {
+    /* 못 적어도 터미널 쪽은 flag 로 돈다 */
+  }
+}
+
 /**
  * 터미널에서 실행한다. 누르는 즉시 시작된다.
  *
@@ -322,6 +368,7 @@ function runInTerminal(prompt, label, cwd, choice) {
       prompt: sanitize(prompt),
       model: vscode.workspace.getConfiguration("buildstudio").get("planModel", ""),
       sessionId: runningSession,
+      auto: autoRun(),
     })
   );
   running = terminal;
@@ -410,6 +457,7 @@ let watcher = null;
 let store = null; // globalState — 폴더를 열면 창이 새로 뜨므로 의도를 넘겨줘야 한다
 let running = null; // 지금 돌고 있는 터미널
 let nudge = null; // 답변 대기 알림 타이머
+let extContext = null; // activate 가 받은 것 — 목업을 반영한 뒤 시작 화면을 되살릴 때 쓴다
 
 /**
  * Claude 가 터미널에서 무언가 묻고 있으면 진행 신호(status.json)가 멈춘다. 그 정적을
@@ -1311,6 +1359,37 @@ async function startBuild() {
   watchForStall(STALL_AFTER);
 }
 
+/**
+ * 목업을 문서에 반영한 다음.
+ *
+ * 여기가 예전에 끊기던 자리다. 반영하면 "문서에 넣었습니다" 알림 하나로 끝나서, 화면을
+ * 확정해 놓고도 다음에 무엇을 눌러야 하는지가 어디에도 없었다. 검토 창은 이미 닫힌 뒤라
+ * 돌아갈 곳도 없다.
+ *
+ * 그래서 반영을 끝점이 아니라 이음매로 본다 — 시작 화면을 되살리고, 단계 표시를 만들기
+ * 쪽으로 갈아끼운 다음, 계획서를 따라 실제로 만들기 시작한다. 목업은 계획서 안에 이미
+ * 들어가 있으므로 만들기가 그 화면을 보고 구현한다.
+ */
+async function afterMockupApplied({ docPath, source, how }) {
+  if (extContext) showStart(extContext);
+
+  // 계획서가 아닌 문서(역설계 보고서)에 넣었으면 만들기로 넘기지 않는다. /buildplanner:build
+  // 는 docs/BUILD-PLAN.md 를 읽는데, 그것이 없으면 첫 단계에서 멈춘다.
+  const canBuild = source && source.file === ACTIONS.plan.output;
+  if (!canBuild) {
+    const after = await vscode.window.showInformationMessage(
+      `${source.label}에 ${how}.`,
+      "문서 보기"
+    );
+    if (after === "문서 보기")
+      await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(docPath));
+    return;
+  }
+
+  if (panel) panel.webview.postMessage({ type: "buildRunning" });
+  await startBuild();
+}
+
 async function start(kind, input) {
   const action = ACTIONS[kind];
   const folder = root();
@@ -1454,7 +1533,9 @@ function wirePanel(context) {
       } else if (message.type === "build") {
         await startBuild();
       } else if (message.type === "mockup") {
-        await runMockup(message.input);
+        await runMockup(message.input, { onApplied: afterMockupApplied });
+      } else if (message.type === "mockupOpen") {
+        await reopenMockup({ onApplied: afterMockupApplied });
       } else if (message.type === "openDoc") {
         const file = message.file || ACTIONS.plan.output;
         await openDoc(file.split("/").pop());
@@ -1502,6 +1583,10 @@ function wirePanel(context) {
 
 /* 아이콘은 선 하나 굵기의 도형만 쓴다. 이모지는 제목의 얇은 자간과 어울리지 않는다. */
 const ICONS = {
+  status: `<svg viewBox="0 0 32 32" aria-hidden="true">
+    <circle cx="16" cy="16" r="12"/>
+    <path d="M16 4 A12 12 0 0 1 26.4 22 L16 16 Z" fill="currentColor" stroke="none" opacity=".55"/>
+  </svg>`,
   plan: `<svg viewBox="0 0 32 32" aria-hidden="true">
     <rect x="7" y="4" width="18" height="24" rx="1.5"/>
     <line x1="12" y1="11" x2="20" y2="11"/>
@@ -1525,6 +1610,12 @@ const ICONS = {
     <rect x="4" y="6" width="24" height="20" rx="1.5"/>
     <path d="M4 21l6-6 4.5 4.5 4-4L28 22"/>
     <circle cx="11" cy="12.5" r="2"/>
+  </svg>`,
+  mockupOpen: `<svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M9 4h18a1.5 1.5 0 0 1 1.5 1.5v14"/>
+    <rect x="3" y="9" width="21" height="18" rx="1.5"/>
+    <path d="M3 22l5-5 4 4 3.5-3.5L24 24"/>
+    <circle cx="9" cy="14" r="1.7"/>
   </svg>`,
   docs: `<svg viewBox="0 0 32 32" aria-hidden="true">
     <path d="M8.5 4h9.5l6 6v17.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 7 27.5v-22A1.5 1.5 0 0 1 8.5 4z"/>
@@ -1558,6 +1649,10 @@ function html(openWith) {
   // 눌러봐야 문서부터 만들라는 말을 듣고 돌아 나올 뿐이다.
   const hasSource = hasFolder && sourcesIn(root().uri.fsPath).length > 0;
 
+  // 이미 그려 둔 목업이 있으면 다시 펼칠 자리를 낸다. 검토 창을 한 번 닫으면 그림이
+  // 남아 있어도 되돌아갈 길이 없었다.
+  const hasMockup = hasSource && mockupsIn(root().uri.fsPath).length > 0;
+
   // 프로젝트가 없으면 할 수 있는 일은 하나뿐이다. 그 하나만 보여준다 — 아직 저장할 곳이
   // 없는데 계획 카드를 띄워봐야 고를 수 없는 선택지일 뿐이다. 폴더가 생기고 나서야
   // 계획과 역설계가 의미를 갖는다. 반대편 동작은 카드가 아니라 아래 작은 링크로 남긴다.
@@ -1584,6 +1679,13 @@ function html(openWith) {
             "mockup",
             "화면 목업",
             "계획서나 역설계 보고서를 읽어 실제 화면 이미지를 만듭니다. 마음에 들면 그때 문서에 끼워 넣고, 다음 [만들기]가 그 화면을 보고 구현합니다."
+          )
+        : "") +
+      (hasMockup
+        ? card(
+            "mockupOpen",
+            "목업 다시 보기",
+            "이미 만들어 둔 화면을 다시 펼칩니다. 새로 그리지 않습니다. 여기서 [계획서에 반영]을 고르면 창이 닫히고 곧바로 만들기로 이어집니다."
           )
         : "")
     : card(
@@ -1748,6 +1850,10 @@ function html(openWith) {
     0%   { transform: translateX(-100%); }
     100% { transform: translateX(385%); }
   }
+
+  /* 끝났으면 흐르는 것도 멈춘다. 결과는 나왔는데 라인만 계속 돌면
+     아직 일하는 중으로 읽힌다 — 화면이 사실과 다른 말을 하는 셈이다. */
+  .progress.done .pulse::after { animation: none; opacity: .18; }
 
   .note { font-size: .78rem; font-weight: 300; opacity: .5; line-height: 1.6; }
   /* 진행이 멈췄을 때만 나타난다. 나머지 화면이 조용한 만큼 이것만 눈에 띈다. */
@@ -2238,6 +2344,7 @@ function html(openWith) {
     // 시작조차 안 된 것처럼 보인다.
     mark(1, false);
     startClock();
+    progress.classList.remove("done");
     progress.classList.add("open");
   }
 
@@ -2275,6 +2382,7 @@ function html(openWith) {
   function reset() {
     stopClock();
     progress.classList.remove("open");
+    progress.classList.remove("done");
     document.getElementById("stall").classList.remove("on");
     document.getElementById("doneActions").classList.remove("on");
     document.getElementById("runActions").style.display = "";
@@ -2480,6 +2588,8 @@ function html(openWith) {
     // 목업은 프롬프트를 편집기에 띄워 고칠 기회를 준다. 한 줄짜리 입력칸으로는
     // 담을 수 없어서 이 화면의 작성칸을 거치지 않는다.
     if (k === "mockup") return vscode.postMessage({ type: "mockup" });
+    // 다시 보기도 마찬가지다. 적을 것이 없다 — 이미 있는 그림을 펼치기만 한다.
+    if (k === "mockupOpen") return vscode.postMessage({ type: "mockupOpen" });
     select(k);
   }
 
@@ -2649,10 +2759,30 @@ function html(openWith) {
       document.getElementById("stop").style.display = panelRoute ? "none" : "";
       return;
     }
+    // 목업을 반영한 뒤 곧바로 만들기로 넘어온 경우. [만들기] 버튼을 누른 것과 같은
+    // 자리에 도착해야 하는데, 거쳐온 화면이 달라서(완료 화면이 아니라 시작 화면일 수도,
+    // 아무데도 아닐 수도 있다) 진행 창을 여는 것까지 여기서 함께 한다.
+    if (m.type === "buildRunning") {
+      kind = "build";
+      hideMain();
+      document.getElementById("doneActions").classList.remove("on");
+      document.getElementById("runActions").style.display = "";
+      document.getElementById("note").innerHTML = "";
+      document.getElementById("stall").classList.remove("on");
+      stepsEl.innerHTML = ACTIONS.build.steps
+        .map((s, i) => '<li data-step="' + (i + 1) + '"><span class="dot"></span>' + s + "</li>")
+        .join("");
+      mark(1, false);
+      startClock();
+      progress.classList.remove("done");
+      progress.classList.add("open");
+      return;
+    }
     if (m.type !== "progress") return;
     mark(Number(m.status.step) || 1, !!m.status.done);
     if (m.status.done) {
       stopClock();
+      progress.classList.add("done");
       document.getElementById("stall").classList.remove("on");
       document.getElementById("elapsed").textContent = "완료";
       document.getElementById("note").innerHTML = m.status.file
@@ -2703,6 +2833,8 @@ const sidebar = {
   <button data-cmd="buildstudio.plan">${ICONS.plan}<span>아이디어를 계획</span></button>
   <button data-cmd="buildstudio.teardown">${ICONS.teardown}<span>역설계</span></button>
   <button data-cmd="buildstudio.mockup">${ICONS.mockup}<span>화면 목업</span></button>
+  <button data-cmd="buildstudio.mockupOpen">${ICONS.mockupOpen}<span>목업 다시 보기</span></button>
+  <button data-cmd="buildstudio.status">${ICONS.status}<span>개발 현황</span></button>
   <button data-cmd="buildstudio.openDocs">${ICONS.docs}<span>문서 다시 보기</span></button>
   <button class="home" data-cmd="buildstudio.engines"><span>AI 모델 고르기</span></button>
   <button class="home" data-cmd="buildstudio.showStart">${ICONS.home}<span>시작 화면 열기</span></button>
@@ -2808,6 +2940,7 @@ function installSkills() {
 
 function activate(context) {
   store = context.globalState;
+  extContext = context; // 목업을 반영한 뒤 시작 화면을 되살리려면 이게 있어야 한다
 
   // engines 는 vscode 를 부르지 않으므로 설정을 읽는 방법만 건네준다. 이게 없으면
   // 설정에 넣은 Gemini 키가 보이지 않아, 키가 있는데도 "준비 안 됨" 으로 판정된다.
@@ -2848,12 +2981,15 @@ function activate(context) {
 
   // 패널을 닫으면 다시 찾을 길이 명령 팔레트뿐이라 눈에 안 띈다. 상태 표시줄에
   // 상시 입구를 둔다.
-  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  status.text = "$(rocket) BUILD STUDIO";
-  status.tooltip = "시작 화면 열기 — 아이디어를 계획 / 역설계";
-  status.command = "buildstudio.showStart";
-  status.show();
-  context.subscriptions.push(status);
+  // 이름을 homeBar 로 둔다. status 로 두면 파일 맨 위의 status(= ./status.js) 를
+  // 이 함수 안에서 가려버려, [개발 현황] 이 현황 화면 대신 상태 표시줄의 show() 를
+  // 불러 아무 일도 일어나지 않는다.
+  const homeBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  homeBar.text = "$(rocket) BUILD STUDIO";
+  homeBar.tooltip = "시작 화면 열기 — 아이디어를 계획 / 역설계";
+  homeBar.command = "buildstudio.showStart";
+  homeBar.show();
+  context.subscriptions.push(homeBar);
 
   // 진행이 멈췄을 때만 나타나는 경고. 배경에 색이 들어가 눈에 바로 걸린다.
   stallBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
@@ -2871,6 +3007,12 @@ function activate(context) {
     vscode.commands.registerCommand("buildstudio.teardown", () => showStart(context, "teardown")),
     vscode.commands.registerCommand("buildstudio.openDocs", () => pickDoc()),
     vscode.commands.registerCommand("buildstudio.mockup", () => runMockup()),
+    vscode.commands.registerCommand("buildstudio.mockupOpen", () =>
+      reopenMockup({ onApplied: afterMockupApplied })
+    ),
+    vscode.commands.registerCommand("buildstudio.status", () =>
+      status.show(root, runClaude, { get: autoRun, set: setAutoRun })
+    ),
     vscode.commands.registerCommand("buildstudio.engines", () => pickEngines())
   );
 
