@@ -5,6 +5,14 @@
   "version": "0.1.0",
   "publisher": "buildstudio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xart0425-bit/buildstudio-start.git"
+  },
+  "homepage": "https://github.com/xart0425-bit/buildstudio-start#readme",
+  "bugs": {
+    "url": "https://github.com/xart0425-bit/buildstudio-start/issues"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
