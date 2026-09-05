@@ -1,0 +1,6 @@
+node_modules/
+*.vsix
+.vscode/
+.buildstudio/
+docs/
+installer/setup-icon.ico

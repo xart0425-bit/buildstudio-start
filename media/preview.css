@@ -1,0 +1,152 @@
+/*
+ * BUILD STUDIO — 생성 문서 스타일.
+ *
+ * 시작 화면과 같은 결(얇은 굵기, 넓은 자간, 넉넉한 여백)을 문서에도 적용한다.
+ * 마크다운 원본은 손대지 않는다. 파일은 어디서 열어도 그대로 읽히고, 보기 좋은 건
+ * 미리보기에서만 얹힌다.
+ */
+
+body.vscode-body {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 3.5rem 2rem 6rem;
+  line-height: 1.75;
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+
+/* ── 표제 ───────────────────────────────────────────────────────────────── */
+
+body.vscode-body h1 {
+  font-size: 2rem;
+  font-weight: 200;
+  letter-spacing: .1em;
+  line-height: 1.35;
+  margin: 0 0 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .25));
+}
+
+/* 제목 바로 아래 인용부호는 부제로 쓴다 — 생성일·분석 대상 같은 것들. */
+body.vscode-body h1 + blockquote {
+  border: none;
+  margin: -1rem 0 3rem;
+  padding: 0;
+  font-size: .85rem;
+  font-weight: 300;
+  font-style: normal;
+  opacity: .55;
+  letter-spacing: .04em;
+}
+
+body.vscode-body h2 {
+  font-size: 1.15rem;
+  font-weight: 400;
+  letter-spacing: .06em;
+  margin: 3.5rem 0 1.25rem;
+  padding-bottom: .5rem;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .18));
+}
+
+body.vscode-body h3 {
+  font-size: .95rem;
+  font-weight: 500;
+  letter-spacing: .05em;
+  margin: 2.25rem 0 .75rem;
+  opacity: .9;
+}
+
+body.vscode-body h4 {
+  font-size: .88rem;
+  font-weight: 500;
+  margin: 1.5rem 0 .5rem;
+  opacity: .75;
+}
+
+/* ── 인용 — 핵심 문장을 눈에 띄게 ──────────────────────────────────────── */
+
+body.vscode-body blockquote {
+  margin: 1.75rem 0;
+  padding: .1rem 0 .1rem 1.5rem;
+  border: none;
+  border-left: 2px solid var(--vscode-textLink-foreground, #4daafc);
+  background: none;
+  font-weight: 300;
+  opacity: .82;
+}
+
+body.vscode-body blockquote p { margin: .5rem 0; }
+
+/* ── 표 — 문제와 대응을 나란히 읽는 자리 ───────────────────────────────── */
+
+body.vscode-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.75rem 0;
+  font-size: .88rem;
+}
+
+body.vscode-body th {
+  text-align: left;
+  font-weight: 500;
+  letter-spacing: .06em;
+  padding: .6rem .9rem;
+  border: none;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .35));
+  background: none;
+  opacity: .65;
+}
+
+body.vscode-body td {
+  padding: .8rem .9rem;
+  border: none;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .12));
+  vertical-align: top;
+  line-height: 1.65;
+}
+
+body.vscode-body tr:last-child td { border-bottom: none; }
+body.vscode-body table tr:nth-child(2n) { background: none; }
+
+/* 두 칸짜리 표는 문제 ↔ 대응 짝이다. 왼쪽을 살짝 눌러 오른쪽이 답으로 읽히게 한다. */
+body.vscode-body td:first-child { font-weight: 400; }
+body.vscode-body td:last-child { opacity: .78; }
+
+/* ── 목록 ───────────────────────────────────────────────────────────────── */
+
+body.vscode-body ul,
+body.vscode-body ol { padding-left: 1.3rem; margin: 1rem 0; }
+body.vscode-body li { margin: .45rem 0; }
+body.vscode-body li::marker { opacity: .4; }
+
+/* ── 코드 ───────────────────────────────────────────────────────────────── */
+
+body.vscode-body code {
+  font-size: .87em;
+  padding: .12em .4em;
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, .12));
+}
+
+body.vscode-body pre {
+  padding: 1.1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .2));
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, .07));
+  line-height: 1.6;
+}
+
+body.vscode-body pre code { background: none; padding: 0; }
+
+/* ── 구분선 — 섹션 사이 숨 고르기 ──────────────────────────────────────── */
+
+body.vscode-body hr {
+  border: none;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, .15));
+  margin: 3.5rem 0;
+}
+
+body.vscode-body a { text-decoration: none; }
+body.vscode-body a:hover { text-decoration: underline; }
+
+body.vscode-body strong { font-weight: 600; }

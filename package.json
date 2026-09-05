@@ -1,0 +1,177 @@
+{
+  "name": "buildstudio-start",
+  "displayName": "BUILD STUDIO",
+  "description": "아이디어에서 개발 계획까지. 계획 · 역설계 · 실행 · 배포를 한 화면에서.",
+  "version": "0.1.0",
+  "publisher": "buildstudio",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "icon": "media/icon-gallery.png",
+  "keywords": [
+    "claude",
+    "plan",
+    "scaffold",
+    "release"
+  ],
+  "extensionDependencies": [],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "시작 화면은 신뢰하지 않은 폴더에서도 열립니다. 다만 Claude를 실행하는 것은 그 폴더의 코드를 읽고 파일을 쓰는 일이므로, 폴더를 신뢰해야 시작됩니다."
+    }
+  },
+  "contributes": {
+    "markdown.previewStyles": [
+      "./media/preview.css"
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "buildstudio",
+          "title": "BUILD STUDIO",
+          "icon": "media/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "buildstudio": [
+        {
+          "id": "buildstudio.actions",
+          "name": "시작",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "buildstudio.showStart",
+        "title": "BUILD STUDIO: 시작 화면 열기"
+      },
+      {
+        "command": "buildstudio.newProject",
+        "title": "BUILD STUDIO: 새 프로젝트"
+      },
+      {
+        "command": "buildstudio.plan",
+        "title": "BUILD STUDIO: 아이디어를 계획"
+      },
+      {
+        "command": "buildstudio.teardown",
+        "title": "BUILD STUDIO: 역설계"
+      },
+      {
+        "command": "buildstudio.mockup",
+        "title": "BUILD STUDIO: 화면 목업 만들기"
+      },
+      {
+        "command": "buildstudio.engines",
+        "title": "BUILD STUDIO: AI 모델 고르기"
+      },
+      {
+        "command": "buildstudio.openDocs",
+        "title": "BUILD STUDIO: 문서 다시 보기"
+      },
+      {
+        "command": "buildstudio.layout",
+        "title": "BUILD STUDIO: 3분할 배치로 정리"
+      },
+      {
+        "command": "buildstudio.run",
+        "title": "BUILD STUDIO: Dev 모드로 실행"
+      },
+      {
+        "command": "buildstudio.release",
+        "title": "BUILD STUDIO: 배포하기"
+      }
+    ],
+    "configuration": {
+      "title": "BUILD STUDIO",
+      "properties": {
+        "buildstudio.showOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "BUILD STUDIO를 열 때 시작 화면을 자동으로 띄웁니다."
+        },
+        "buildstudio.runIn": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "terminal"
+          ],
+          "enumDescriptions": [
+            "오른쪽 Claude 창에서 진행합니다. 확장이 내용을 적어줄 수는 있어도 보내지는 못해서, 시작하려면 Enter를 한 번 눌러야 합니다.",
+            "터미널에서 진행합니다. 누르는 즉시 시작되지만 되묻는 말이 터미널 글자로 뜹니다."
+          ],
+          "default": "panel",
+          "description": "계획 · 역설계 · 배포를 어디서 진행할지."
+        },
+        "buildstudio.planEngine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "claude",
+            "codex",
+            "gemini"
+          ],
+          "enumDescriptions": [
+            "준비된 것 중 Claude → Codex → Gemini 순서로 씁니다.",
+            "Claude Code 로 진행합니다. BUILD STUDIO 의 지시서를 슬래시 명령으로 알아듣습니다.",
+            "Codex(ChatGPT)로 진행합니다. 지시서 파일을 읽혀서 같은 절차를 밟게 합니다.",
+            "Gemini CLI 로 진행합니다. 지시서 파일을 읽혀서 같은 절차를 밟게 합니다."
+          ],
+          "default": "auto",
+          "description": "계획 · 역설계 · 만들기 · 배포를 어떤 AI 로 진행할지."
+        },
+        "buildstudio.planModel": {
+          "type": "string",
+          "default": "",
+          "description": "설계에 쓸 모델 이름. 비워두면 그 CLI 의 기본 모델을 씁니다. (예: opus, gpt-5.1-codex, gemini-2.5-pro)"
+        },
+        "buildstudio.imageEngine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "codex",
+            "gemini"
+          ],
+          "enumDescriptions": [
+            "준비된 것 중 Codex → Gemini 순서로 씁니다.",
+            "Codex(ChatGPT)로 만듭니다. 로그인만 돼 있으면 됩니다.",
+            "Gemini 이미지 모델을 직접 부릅니다. API 키가 필요합니다."
+          ],
+          "default": "auto",
+          "description": "화면 목업 이미지를 어떤 AI 로 만들지."
+        },
+        "buildstudio.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Gemini 이미지에 쓸 API 키. [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 에서 받습니다. 비워두면 GEMINI_API_KEY 환경변수를 씁니다."
+        },
+        "buildstudio.geminiImageModel": {
+          "type": "string",
+          "default": "",
+          "description": "Gemini 이미지 모델. 비워두면 gemini-2.5-flash-image 를 씁니다."
+        },
+        "buildstudio.codexExecutable": {
+          "type": "string",
+          "default": "",
+          "description": "목업 이미지를 만드는 Codex 실행 파일 경로. 비워두면 알아서 찾습니다."
+        },
+        "buildstudio.codexModel": {
+          "type": "string",
+          "default": "",
+          "description": "목업에 쓸 Codex 모델. 비워두면 Codex 기본값을 씁니다."
+        }
+      }
+    }
+  }
+}

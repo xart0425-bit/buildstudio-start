@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "buildplanner",
+  "version": "0.1.0",
+  "description": "아이디어를 개발 계획서로 바꾸는 도구 모음. 반복되는 개발 준비 작업을 스킬로 묶습니다.",
+  "author": {
+    "name": "xart0425",
+    "email": "xart0425@gmail.com"
+  }
+}

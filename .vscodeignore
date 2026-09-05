@@ -1,0 +1,8 @@
+.buildstudio/**
+docs/**
+.vscode/**
+*.vsix
+media/icon-source.png
+media/icon-old.svg
+installer/**
+media/icon.svg
