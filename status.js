@@ -15,6 +15,17 @@ const path = require("path");
 
 const PROGRESS = path.join("docs", "PROGRESS.json");
 
+/**
+ * 현황 파일을 만들어 달라는 말.
+ *
+ * 빈 화면의 버튼과 extension.js 의 만들기가 같은 말을 써야 한다. 두 곳에 따로 적어 두면
+ * 한쪽만 고쳐졌을 때 만들어지는 파일의 모양이 갈린다.
+ */
+const MAKE_PROMPT =
+  "개발 계획서(docs/BUILD-PLAN.md)와 실제 코드를 대조해서 docs/PROGRESS.json 을 만들어줘. " +
+  "형식: { title, asOf, stages: [ { no, name, note, tasks: [ { id, label, done, tag } ] } ] }. " +
+  "done 은 짐작하지 말고 코드에 실제로 있는지 확인해서 정해줘.";
+
 let panel = null;
 let watcher = null;
 
@@ -106,10 +117,8 @@ function emptyHtml(webview, why) {
 <script>
   const vs = acquireVsCodeApi();
   document.getElementById("make").addEventListener("click", () =>
-    vs.postMessage({ command: "run", label: "현황 파일 만들기", prompt:
-      "개발 계획서(docs/BUILD-PLAN.md)와 실제 코드를 대조해서 docs/PROGRESS.json 을 만들어줘. " +
-      "형식: { title, asOf, stages: [ { no, name, note, tasks: [ { id, label, done, tag } ] } ] }. " +
-      "done 은 짐작하지 말고 코드에 실제로 있는지 확인해서 정해줘." }));
+    vs.postMessage({ command: "run", label: "현황 파일 만들기",
+      prompt: ${JSON.stringify(MAKE_PROMPT)} }));
 </script></body></html>`;
 }
 
@@ -491,4 +500,4 @@ function paint(folder) {
   else panel.webview.html = html(data, mode.get());
 }
 
-module.exports = { show, html };
+module.exports = { show, html, MAKE_PROMPT, PROGRESS };

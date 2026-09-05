@@ -27,7 +27,9 @@ const ACTIONS = {
     label: "만들기",
     hidden: true,
     output: "docs/BUILD-LOG.md",
-    steps: ["계획서 읽기", "무엇을 만들지 정하기", "만들기", "돌려보고 기록"],
+    // 만들기 앞에 개발 현황 정리가 있다. 무엇이 끝났는지 적힌 파일 없이 만들기 시작하면
+    // 현황 화면은 계속 빈 채로 남고, 다음에 열었을 때 어디까지 왔는지 알 수 없다.
+    steps: ["계획서 읽기", "개발 현황 정리", "무엇을 만들지 정하기", "만들기", "돌려보고 기록"],
   },
   plan: {
     skill: "/buildplanner:plan",
@@ -456,6 +458,7 @@ let docsStale = false;
 let watcher = null;
 let store = null; // globalState — 폴더를 열면 창이 새로 뜨므로 의도를 넘겨줘야 한다
 let running = null; // 지금 돌고 있는 터미널
+let progressWait = null; // docs/PROGRESS.json 이 생기기를 기다리는 한 번짜리 감시
 let nudge = null; // 답변 대기 알림 타이머
 let extContext = null; // activate 가 받은 것 — 목업을 반영한 뒤 시작 화면을 되살릴 때 쓴다
 
@@ -1287,6 +1290,37 @@ function stopWatching() {
   }
 }
 
+/** 개발 현황 화면이 읽는 파일. 이것이 있어야 그 화면이 단계별로 채워진다. */
+function hasProgress(folder) {
+  return fs.existsSync(path.join(folder.uri.fsPath, "docs", "PROGRESS.json"));
+}
+
+/**
+ * 현황 파일이 생기는 순간 개발 현황 화면을 한 번 띄운다.
+ *
+ * 만들기를 시작하는 시점에 바로 띄우면 아직 빈 화면이라 "찾지 못했습니다" 만 보인다.
+ * 파일이 생긴 뒤에 띄워야 단계가 채워진 화면이 나온다. 한 번 띄우고 감시는 거둔다 —
+ * 이후 갱신은 그 화면이 스스로 따라간다.
+ */
+function openStatusWhenReady(folder) {
+  if (progressWait) {
+    progressWait.dispose();
+    progressWait = null;
+  }
+  const found = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(folder, "docs/PROGRESS.json")
+  );
+  progressWait = found;
+  const open = async () => {
+    if (progressWait !== found) return;
+    progressWait = null;
+    found.dispose();
+    await vscode.commands.executeCommand("buildstudio.status");
+  };
+  found.onDidCreate(open);
+  found.onDidChange(open);
+}
+
 /** 스킬이 남기는 진행 파일을 지켜보다 화면에 반영하고, 끝나면 문서를 연다. */
 function watchProgress(folder, kind) {
   stopWatching();
@@ -1343,10 +1377,21 @@ async function startBuild() {
 
   watchProgress(folder, "build");
 
-  const where = await runClaude(ACTIONS.build.skill, ACTIONS.build.label);
+  // 순서상 만들기 바로 앞은 개발 현황 문서다. 목업을 반영하고 넘어왔든 목업 없이
+  // 만들기를 눌렀든 마찬가지다 — 없으면 만들라는 말을 함께 실어 보내고, 파일이 생기면
+  // 현황 화면을 띄운다. 지시서에도 같은 단계가 적혀 있지만, 그쪽 한 곳에만 기대면
+  // 스킬을 모르는 엔진으로 돌 때 조용히 건너뛰는 일이 생긴다.
+  const first = hasProgress(folder) ? "" : ` ${status.MAKE_PROMPT} 그 다음 계획서의 다음 단계를 진행해줘.`;
+  if (first) openStatusWhenReady(folder);
+
+  const where = await runClaude(ACTIONS.build.skill + first, ACTIONS.build.label);
   if (!where) {
     stopWatching();
     stopNudging();
+    if (progressWait) {
+      progressWait.dispose();
+      progressWait = null;
+    }
     if (panel) panel.webview.postMessage({ type: "reset" });
     return;
   }
@@ -2215,8 +2260,8 @@ function html(openWith) {
       <p class="elapsed" id="elapsed"></p>
       <p class="note" id="note"></p>
       <div class="done-actions" id="doneActions">
-        <button class="go" id="buildGo">만들기</button>
-        <button class="back" id="mockupGo">목업 만들기</button>
+        <button class="go" id="mockupGo">화면 목업 만들기</button>
+        <button class="back" id="buildGo">목업 없이 만들기</button>
         <button class="back" id="openDoc">문서 보기</button>
         <button class="back" id="doneBack">← 처음으로</button>
       </div>
@@ -2785,12 +2830,16 @@ function html(openWith) {
       progress.classList.add("done");
       document.getElementById("stall").classList.remove("on");
       document.getElementById("elapsed").textContent = "완료";
-      document.getElementById("note").innerHTML = m.status.file
-        ? "결과는 <strong>" + m.status.file + "</strong> 에 있습니다."
-        : "";
       // 계획이 끝났으면 만들기로 이어간다. 만들기가 끝난 뒤에는 또 만들 것이 없다.
       doneFile = m.status.file || "";
       const canBuild = m.kind === "plan";
+      // 순서를 화면에 적어 둔다. 버튼만으로는 목업이 건너뛰어도 되는 곁가지로 보인다.
+      const order = canBuild
+        ? "<br>다음 순서 — <strong>화면 목업 → 계획서에 반영 → 개발 현황 → 만들기</strong>." +
+          "<br>목업 없이 만들기를 눌러도 개발 현황 문서부터 만듭니다."
+        : "";
+      document.getElementById("note").innerHTML =
+        (m.status.file ? "결과는 <strong>" + m.status.file + "</strong> 에 있습니다." : "") + order;
       // 목업은 역설계 뒤에도 의미가 있다 — 보고서가 제안한 더 나은 제품의 화면이다.
       const canMockup = m.kind === "plan" || m.kind === "teardown";
       document.getElementById("buildGo").style.display = canBuild ? "" : "none";
@@ -3006,7 +3055,9 @@ function activate(context) {
     vscode.commands.registerCommand("buildstudio.plan", () => showStart(context, "plan")),
     vscode.commands.registerCommand("buildstudio.teardown", () => showStart(context, "teardown")),
     vscode.commands.registerCommand("buildstudio.openDocs", () => pickDoc()),
-    vscode.commands.registerCommand("buildstudio.mockup", () => runMockup()),
+    vscode.commands.registerCommand("buildstudio.mockup", () =>
+      runMockup(undefined, { onApplied: afterMockupApplied })
+    ),
     vscode.commands.registerCommand("buildstudio.mockupOpen", () =>
       reopenMockup({ onApplied: afterMockupApplied })
     ),
