@@ -16,6 +16,19 @@
 
 <br>
 
+> ### In English
+>
+> **BUILD STUDIO** turns one sentence about what you want to build into a researched
+> development plan, screen mockups, working code, and a shippable installer — without
+> leaving VS Code.
+>
+> The actual work is done by the AI agent CLIs already installed and signed in on your
+> machine: **Claude Code**, **Codex**, or **Gemini CLI**. BUILD STUDIO decides what to ask
+> them and in what order, and shows you the progress. **It never asks for or stores an API
+> key** — billing and model choice stay on your own subscription.
+>
+> ⚠️ **The interface and all documentation are in Korean.** An English UI is not available yet.
+
 만들고 싶은 것을 한 줄로 설명하면 **조사해서 개발 계획서를 만들고**, 화면을 그려보고, 계획을 따라 실제로 만들고, 실행해 보고, GitHub 에 올리고, 설치파일까지 뽑습니다. 그 사이를 오가느라 창을 옮겨 다닐 일이 없습니다.
 
 VS Code 확장이며, 실제 작업은 이미 여러분의 컴퓨터에 깔려 있고 로그인돼 있는 **AI 에이전트 CLI**(Claude Code · Codex · Gemini CLI)가 합니다. BUILD STUDIO 는 무엇을 어떤 순서로 시킬지 정하고, 그 진행을 화면에 보여줍니다. **API 키를 받아 보관하지 않습니다** — 요금과 모델 선택은 여러분의 구독을 그대로 따릅니다.
@@ -30,17 +43,30 @@ VS Code 확장이며, 실제 작업은 이미 여러분의 컴퓨터에 깔려 �
 
 ### 1. 확장 설치
 
+VS Code 의 `확장`(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd>) 에서 **BUILD STUDIO** 를 검색해 설치합니다.
+
+명령줄에서 넣으려면:
+
+```bash
+code --install-extension buildstudio.buildstudio
+```
+
+<details>
+<summary>소스에서 직접 빌드해 넣기</summary>
+
+<br>
+
 ```bash
 git clone https://github.com/xart0425-bit/buildstudio-start.git
 ```
 
-VS Code 에서 `확장` ▸ `···` ▸ `VSIX에서 설치` 로 넣거나, 개발 중이라면 이 폴더를 열고 `F5` 로 확장 개발 호스트를 띄웁니다.
-
-직접 VSIX 와 Windows 설치파일을 만들려면:
+이 폴더를 열고 `F5` 로 확장 개발 호스트를 띄웁니다. VSIX 와 Windows 설치파일을 직접 만들려면:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File installer\build.ps1
 ```
+
+</details>
 
 ### 2. 필요한 것
 

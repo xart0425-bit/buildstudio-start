@@ -1,7 +1,7 @@
 {
   "name": "buildstudio",
   "displayName": "BUILD STUDIO",
-  "description": "아이디어에서 개발 계획까지. 계획 · 역설계 · 실행 · 배포를 한 화면에서.",
+  "description": "아이디어에서 개발 계획까지 — 계획 · 역설계 · 실행 · 배포를 한 화면에서. Turn an idea into a dev plan, working code and an installer, inside VS Code (Korean UI).",
   "version": "0.1.0",
   "publisher": "buildstudio",
   "license": "MIT",
@@ -22,9 +22,12 @@
   "icon": "media/icon-gallery.png",
   "keywords": [
     "claude",
+    "codex",
+    "gemini",
     "plan",
     "scaffold",
-    "release"
+    "release",
+    "korean"
   ],
   "extensionDependencies": [],
   "main": "./extension.js",
