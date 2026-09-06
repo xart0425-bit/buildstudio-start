@@ -10,7 +10,7 @@
 ; 버전은 build.ps1 이 package.json 에서 읽어 /DAppVersion 으로 넘겨줍니다.
 ; 아래 값은 ISCC 로 이 파일을 직접 컴파일할 때만 쓰입니다.
 #ifndef AppVersion
-  #define AppVersion   "0.1.1"
+  #define AppVersion   "0.1.6"
 #endif
 
 #define ExtensionId    "buildstudio.buildstudio"

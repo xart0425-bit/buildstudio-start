@@ -2972,16 +2972,25 @@ function engineLine() {
  *
  * Claude Code 는 스킬을 슬래시 명령으로 알아듣는데, 그러려면 파일이 ~/.claude/skills 에
  * 있어야 한다. 확장만 설치한 새 PC 에서는 그 자리가 비어 있어서, 버튼은 도는데 결과만
- * 엉뚱하게 나온다. 없을 때만 넣고, 이미 있으면 손대지 않는다 — 사용자가 고쳐 쓴 것을
- * 확장이 덮어쓰면 안 된다.
+ * 엉뚱하게 나온다.
+ *
+ * **지시서 하나하나를 따로 본다.** 폴더가 있으면 통째로 건너뛰던 때는, 판을 올려
+ * 지시서를 새로 넣어도 이미 쓰던 사람에게는 영영 가지 않았다 — 버튼은 생기는데
+ * 그 버튼이 부르는 지시서가 없는 상태가 된다. 이미 있는 것은 그대로 둔다. 사용자가
+ * 고쳐 쓴 것을 확장이 덮어쓰면 안 된다.
  */
 function installSkills() {
   try {
-    const from = path.join(__dirname, "skills", "buildplanner");
-    const to = path.join(os.homedir(), ".claude", "skills", "buildplanner");
-    if (!fs.existsSync(from) || fs.existsSync(to)) return;
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.cpSync(from, to, { recursive: true });
+    const from = path.join(__dirname, "skills", "buildplanner", "skills");
+    const to = path.join(os.homedir(), ".claude", "skills", "buildplanner", "skills");
+    if (!fs.existsSync(from)) return;
+    fs.mkdirSync(to, { recursive: true });
+    for (const name of fs.readdirSync(from)) {
+      const src = path.join(from, name);
+      const dst = path.join(to, name);
+      if (!fs.statSync(src).isDirectory() || fs.existsSync(dst)) continue;
+      fs.cpSync(src, dst, { recursive: true });
+    }
   } catch {
     /* 못 깔아도 파일 경로로 넘기는 길이 남아 있다 */
   }

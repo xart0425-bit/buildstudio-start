@@ -12,8 +12,20 @@
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
+const journal = require("./journal");
 
 const PROGRESS = path.join("docs", "PROGRESS.json");
+
+/**
+ * 다듬은 것을 계획서로 되먹이라는 말.
+ *
+ * 항목을 여기에 늘어놓지 않고 파일을 가리킨다. 프롬프트는 터미널로 나갈 때 따옴표가
+ * 지워지고 줄이 하나로 붙으므로, 스무 개짜리 목록을 실어 보내면 어디까지가 한 항목인지
+ * 알아볼 수 없게 된다. 파일을 읽게 하면 사람이 화면에서 추린 그대로가 전달된다.
+ */
+const REFINE_PROMPT =
+  "/buildplanner:refine docs/CHANGES.md 의 반영 대기 항목을 " +
+  "개발 계획서와 개발 현황, 개발 일지에 반영해줘.";
 
 /**
  * 현황 파일을 만들어 달라는 말.
@@ -28,6 +40,17 @@ const MAKE_PROMPT =
 
 let panel = null;
 let watcher = null;
+
+/**
+ * 다듬기 칸에 적어 둔 덧붙일 말.
+ *
+ * 창 밖에 둔다. 체크 하나를 눌러도 화면은 다시 그려지는데, 그때마다 치던 글이
+ * 사라지면 두 번 다시 적지 않게 된다.
+ */
+let noteText = "";
+
+/** 우리가 변경 기록을 쓴 시각. 우리 손으로 쓴 것에 반응해 다시 그리지 않으려고 둔다. */
+let ourWrite = 0;
 
 /** 진행 버튼 옆 모드를 읽고 쓰는 통로. extension.js 가 열 때 건네준다. */
 let mode = { get: () => false, set: async () => {} };
@@ -123,10 +146,61 @@ function emptyHtml(webview, why) {
 }
 
 /**
+ * 다듬기 칸.
+ *
+ * 계획서를 만든 뒤 대화창에서 시킨 수정이 여기 모인다. 사람이 체크로 추리고 누르면
+ * 그때 문서로 간다 — 목업 검토 창과 같은 순서다. 누르기 전까지 계획서는 손대지 않는다.
+ *
+ * @param {{items: {id, when, text, state}[]}} changes docs/CHANGES.md 를 읽은 것
+ */
+function refineHtml(changes) {
+  const items = (changes && changes.items) || [];
+  const waiting = items.filter((i) => i.state === journal.WAITING);
+  const held = items.filter((i) => i.state === journal.HELD);
+  const applied = items.filter((i) => i.state === journal.APPLIED);
+  const open = waiting.concat(held);
+
+  const list = open
+    .map((i) => {
+      const on = i.state === journal.WAITING;
+      return `<li class="${on ? "on" : "held"}">
+        <button class="pick" data-id="${esc(i.id)}" data-on="${on ? 1 : 0}"
+                title="${on ? "이번 반영에서 빼기" : "이번 반영에 넣기"}">${on ? "&#10003;" : ""}</button>
+        <span class="when">${esc(i.when)}</span>
+        <span class="txt">${esc(i.text)}</span>
+      </li>`;
+    })
+    .join("");
+
+  const body = open.length
+    ? `<ul class="changes">${list}</ul>
+       <textarea id="note" rows="2"
+         placeholder="덧붙일 말 — 반영할 때 함께 전달됩니다 (선택)">${esc(noteText)}</textarea>`
+    : `<p class="rempty">아직 모은 것이 없습니다.
+         대화창에서 시킨 수정을 <code>docs/CHANGES.md</code> 로 가져옵니다 —
+         창을 닫아도 대화 기록은 디스크에 남아 있어서 지난 것까지 모을 수 있습니다.</p>`;
+
+  return `<section class="refine">
+    <div class="rhead">
+      <h2>다듬기</h2>
+      <p>계획서를 만든 뒤에 고친 것을 계획서로 되돌립니다. 누르기 전까지 문서는 그대로입니다.</p>
+      <button class="ghost" id="collect">대화에서 모으기</button>
+      <button class="go" id="apply"${open.length && waiting.length ? "" : " disabled"}>계획서에 반영</button>
+    </div>
+    ${body}
+    <div class="rfoot">
+      <span>반영 대기 ${waiting.length} · 보류 ${held.length} · 반영함 ${applied.length}</span>
+      <button id="openChanges">변경 기록 열기</button>
+    </div>
+  </section>`;
+}
+
+/**
  * @param {object} data docs/PROGRESS.json
  * @param {boolean} auto 되묻지 않고 진행하는 모드인지 — 진행 버튼 옆의 표시가 이걸 따른다
+ * @param {object} changes docs/CHANGES.md 를 읽은 것
  */
-function html(data, auto) {
+function html(data, auto, changes) {
   const stages = data.stages || [];
 
   let doneAll = 0;
@@ -286,6 +360,46 @@ function html(data, auto) {
          border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.35)); }
   .ask:hover { opacity: 1; border-color: #EE5A4E; color: #EE5A4E; }
 
+  /* 다듬기 — 계획서를 만든 뒤에 고친 것이 모이는 자리 */
+  .refine { display: flex; flex-direction: column; gap: .8rem; padding-top: 1.4rem;
+            border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,.18)); }
+  .rhead { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+  .rhead h2 { margin: 0; font-size: .98rem; font-weight: 500; }
+  .rhead p { margin: 0; flex: 1; min-width: 15rem; font-size: .76rem; font-weight: 300;
+             opacity: .5; line-height: 1.65; }
+  .ghost { font-size: .74rem; padding: .32rem .8rem; border-radius: 3px;
+           background: var(--vscode-button-secondaryBackground);
+           color: var(--vscode-button-secondaryForeground); border: none; }
+  .ghost:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .go[disabled] { opacity: .35; cursor: default; }
+  .rempty { margin: 0; font-size: .78rem; font-weight: 300; opacity: .5; line-height: 1.75;
+            max-width: 62ch; }
+  .rempty code { font-family: var(--vscode-editor-font-family, monospace); opacity: .85; }
+
+  .changes { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+  .changes li { display: flex; align-items: flex-start; gap: .55rem; font-size: .82rem;
+                padding: .24rem 0; }
+  .changes li.held .txt { opacity: .35; text-decoration: line-through; }
+  .changes .pick { flex: none; margin-top: .1rem; width: 15px; height: 15px; border-radius: 4px;
+                   font-size: .62rem; line-height: 1; display: grid; place-items: center;
+                   background: transparent; color: #fff; padding: 0;
+                   border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.35)); }
+  .changes li.on .pick { background: #4FA97A; border-color: #4FA97A; }
+  .changes .when { flex: none; margin-top: .1rem; font-size: .66rem; opacity: .4;
+                   font-variant-numeric: tabular-nums; }
+  .changes .txt { flex: 1; min-width: 0; line-height: 1.65; }
+
+  #note { width: 100%; resize: vertical; font-family: inherit; font-size: .8rem;
+          padding: .5rem .65rem; border-radius: 4px; line-height: 1.6;
+          background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+          border: 1px solid var(--vscode-widget-border, rgba(128,128,128,.3)); }
+  #note:focus { outline: 1px solid var(--vscode-focusBorder); }
+
+  .rfoot { display: flex; gap: 1rem; align-items: center; font-size: .7rem; font-weight: 300;
+           opacity: .45; }
+  .rfoot button { background: none; border: none; padding: 0; color: inherit; font-size: .7rem;
+                  text-decoration: underline; text-underline-offset: 3px; opacity: .9; }
+
   footer { font-size: .72rem; font-weight: 300; opacity: .4; display: flex; gap: 1rem;
            flex-wrap: wrap; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,.18));
            padding-top: .9rem; }
@@ -332,6 +446,8 @@ function html(data, auto) {
   </section>
 
   <section id="rail">${rows}</section>
+
+  ${refineHtml(changes)}
 
   <footer>
     <span>docs/PROGRESS.json 을 읽어 그립니다 — 파일이 바뀌면 이 화면도 바뀝니다</span>
@@ -386,6 +502,45 @@ function html(data, auto) {
     });
   document.getElementById("openPlan").addEventListener("click", () => vs.postMessage({ command: "openPlan" }));
   document.getElementById("openFile").addEventListener("click", () => vs.postMessage({ command: "openFile" }));
+
+  // 다듬기. 체크는 누르는 즉시 파일에 적힌다 — 창을 닫아도 추린 결과가 남아야 한다.
+  for (const p of document.querySelectorAll(".changes .pick"))
+    p.addEventListener("click", () => {
+      const on = p.dataset.on !== "1";
+      p.dataset.on = on ? "1" : "0";
+      p.innerHTML = on ? "&#10003;" : "";
+      p.closest("li").className = on ? "on" : "held";
+      const any = document.querySelectorAll('.changes .pick[data-on="1"]').length > 0;
+      const go = document.getElementById("apply");
+      if (go) go.disabled = !any;
+      vs.postMessage({ command: "hold", id: p.dataset.id, on });
+    });
+
+  const collectBtn = document.getElementById("collect");
+  if (collectBtn)
+    collectBtn.addEventListener("click", () => {
+      collectBtn.disabled = true;
+      collectBtn.textContent = "모으는 중";
+      vs.postMessage({ command: "collect" });
+    });
+
+  // 치는 대로 확장에 넘긴다. 화면이 다시 그려져도 적던 글이 그대로 남아야 한다.
+  const noteEl = document.getElementById("note");
+  if (noteEl)
+    noteEl.addEventListener("input", () =>
+      vs.postMessage({ command: "note", text: noteEl.value })
+    );
+
+  const applyBtn = document.getElementById("apply");
+  if (applyBtn)
+    applyBtn.addEventListener("click", () => {
+      applyBtn.disabled = true;
+      applyBtn.textContent = "시작함";
+      vs.postMessage({ command: "apply", note: noteEl ? noteEl.value : "" });
+    });
+
+  const openCh = document.getElementById("openChanges");
+  if (openCh) openCh.addEventListener("click", () => vs.postMessage({ command: "openChanges" }));
 </script>
 </body></html>`;
 }
@@ -444,6 +599,82 @@ function show(root, run, modeApi) {
       return;
     }
 
+    if (m.command === "openChanges") {
+      const file = vscode.Uri.file(journal.changesFile(folder.uri.fsPath));
+      if (!fs.existsSync(file.fsPath)) {
+        vscode.window.showWarningMessage(
+          "아직 변경 기록이 없습니다. [대화에서 모으기] 를 먼저 눌러주세요."
+        );
+        return;
+      }
+      await vscode.window.showTextDocument(file);
+      return;
+    }
+
+    if (m.command === "note") {
+      noteText = String(m.text || "");
+      return;
+    }
+
+    // 대화 기록에서 사람이 친 말을 모아 docs/CHANGES.md 에 넣는다.
+    if (m.command === "collect") {
+      let got;
+      ourWrite = Date.now();
+      try {
+        got = journal.collect(folder.uri.fsPath);
+      } catch (e) {
+        vscode.window.showWarningMessage(`변경 기록을 쓰지 못했습니다: ${e.message || e}`);
+        paint(folder);
+        return;
+      }
+      // 아무것도 없을 때 조용히 넘어가면 눌리지 않은 것으로 읽힌다. 왜 비었는지까지 말한다.
+      if (!got.added) {
+        vscode.window.showInformationMessage(
+          got.dirs
+            ? "새로 모을 것이 없습니다. 지난번 모은 뒤로 대화창에 남긴 요청이 없습니다."
+            : "이 폴더의 대화 기록을 찾지 못했습니다. Claude Code 로 한 번 대화한 뒤에 다시 눌러주세요."
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `${got.added}개를 모았습니다. 추린 다음 [계획서에 반영] 을 눌러주세요.`
+        );
+      }
+      paint(folder);
+      return;
+    }
+
+    // 체크 하나. 반영 대기 ↔ 보류.
+    if (m.command === "hold") {
+      ourWrite = Date.now();
+      try {
+        journal.setState(
+          folder.uri.fsPath,
+          m.id,
+          m.on ? journal.WAITING : journal.HELD
+        );
+      } catch {
+        /* 못 적으면 다음 그리기에서 원래대로 돌아온다 */
+      }
+      return;
+    }
+
+    if (m.command === "apply") {
+      const model = journal.read(folder.uri.fsPath);
+      const waiting = model.items.filter((i) => i.state === journal.WAITING);
+      if (!waiting.length) {
+        vscode.window.showWarningMessage("반영 대기 항목이 없습니다.");
+        paint(folder);
+        return;
+      }
+      const note = String(m.note || "").trim();
+      noteText = ""; // 보냈으니 비운다. 남겨 두면 다음 반영에 또 실린다.
+      await run(
+        note ? `${REFINE_PROMPT} 덧붙일 말: ${note}` : REFINE_PROMPT,
+        "계획서에 반영"
+      );
+      return;
+    }
+
     if (m.command === "mode") {
       await mode.set(!!m.on);
       // Claude 창 쪽은 이미 열려 있는 대화를 바꾸지 못한다. 조용히 넘어가면 "눌렀는데
@@ -481,10 +712,15 @@ function show(root, run, modeApi) {
   });
 
   // 일이 끝나 PROGRESS.json 이 바뀌면 화면이 스스로 따라간다. 사람이 다시 열지 않아도 된다.
+  // 변경 기록도 같이 본다 — 편집기에서 손으로 고친 것이 화면에 바로 보여야 한다.
   watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(folder, "docs/PROGRESS.json")
+    new vscode.RelativePattern(folder, "docs/{PROGRESS.json,CHANGES.md}")
   );
-  const again = () => paint(folder);
+  const again = () => {
+    // 방금 우리가 쓴 것이면 넘어간다. 체크 한 번에 화면을 다시 그리면 치던 글이 끊긴다.
+    if (Date.now() - ourWrite < 1500) return;
+    paint(folder);
+  };
   watcher.onDidChange(again);
   watcher.onDidCreate(again);
   watcher.onDidDelete(again);
@@ -495,9 +731,17 @@ function show(root, run, modeApi) {
 function paint(folder) {
   if (!panel) return;
   const data = readProgress(folder);
+
+  let changes = { items: [] };
+  try {
+    changes = journal.read(folder.uri.fsPath);
+  } catch {
+    /* 못 읽으면 다듬기 칸만 비어 보인다 — 현황까지 막지 않는다 */
+  }
+
   if (!data) panel.webview.html = emptyHtml(panel.webview, "이 폴더에서 찾지 못했습니다.");
   else if (data.error) panel.webview.html = emptyHtml(panel.webview, `읽지 못했습니다: ${data.error}`);
-  else panel.webview.html = html(data, mode.get());
+  else panel.webview.html = html(data, mode.get(), changes);
 }
 
-module.exports = { show, html, MAKE_PROMPT, PROGRESS };
+module.exports = { show, html, MAKE_PROMPT, REFINE_PROMPT, PROGRESS };

@@ -151,6 +151,12 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 <td><code>docs/PROGRESS.json</code></td>
 </tr>
 <tr>
+<td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-build.png" width="34"></td>
+<td><a href="#menu-refine"><b>다듬기</b></a></td>
+<td>계획서를 만든 뒤에 고친 것을 계획서로 되돌립니다</td>
+<td><code>docs/CHANGES.md</code></td>
+</tr>
+<tr>
 <td align="center"><img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-docs.png" width="34"></td>
 <td><a href="#menu-docs"><b>문서 다시 보기</b></a></td>
 <td>만든 문서를 미리보기로 엽니다</td>
@@ -316,6 +322,36 @@ powershell -ExecutionPolicy Bypass -File installer\build.ps1
 화면이 코드를 짐작해 그리면 실제와 어긋나기 시작하므로, 무엇이 끝났는지는 `docs/PROGRESS.json` 한 곳에만 적어 둡니다.
 
 **모드 토글** — 진행 버튼 옆에 `하나씩 확인` 과 `자동으로` 가 있습니다. `자동으로` 는 파일을 고칠 때마다 되묻지 않고 갑니다 (`--permission-mode acceptEdits`). 명령 실행은 그대로 묻습니다. Shift+Tab 으로만 바꿀 수 있던 것을 눌러야 할 버튼 옆으로 꺼내 둔 것입니다 — 무엇이 켜져 있는지 보이지 않으면, 되묻는 창이 뜨는 것도 안 뜨는 것도 다 고장처럼 읽힙니다.
+
+<a name="menu-refine"></a>
+
+### <img src="https://raw.githubusercontent.com/xart0425-bit/buildstudio-start/main/media/readme/ic-build.png" height="24"> 다듬기
+
+`BUILD STUDIO: 개발 현황` &nbsp;→&nbsp; 화면 아래 **다듬기** 칸 &nbsp;→&nbsp; `docs/CHANGES.md`
+
+계획서의 단계를 다 끝낸 뒤에도 고칠 일은 계속 나옵니다. 써 봐야 아는 느림, 눈에 띄는 떨림, 뒤늦게 생긴 요구. **그 결과가 계획서로 돌아가지 않으면 계획서는 "처음에 이렇게 만들려 했다"에 멈추고, 실제 물건과 멀어집니다.**
+
+다듬기는 그 되먹임을 합니다. 순서는 목업 검토 창과 같습니다 — **모으고 → 추리고 → 누를 때 반영.**
+
+**1. `대화에서 모으기`** — 대화창에서 시킨 요청을 모아 `docs/CHANGES.md` 에 적습니다. 평소에 따로 적어 둘 것이 없습니다.
+
+> 창을 닫아도, 대화를 지워도 기록은 디스크에 남습니다. Claude Code 가 주고받은 것을 `~/.claude/projects/` 아래에 이어 쓰기 때문입니다. 거기서 **사람이 직접 친 말만** 골라냅니다 — 도구 결과 · 시스템 알림 · 붙여넣은 명령줄 · `진행해주세요` 같은 줄은 걸러냅니다.
+
+**2. 추리기** — 체크를 끄면 그 항목은 `보류` 로 갑니다. 다음에 다시 올라오지 않습니다. 옆 칸에 덧붙일 말을 적을 수 있고, 적은 말은 반영할 때 함께 갑니다.
+
+**3. `계획서에 반영`** — 추린 항목과 **실제 코드를 대조해서** 문서 셋을 고칩니다.
+
+| 문서 | 들어가는 것 |
+|:--|:--|
+| `docs/BUILD-PLAN.md` | 지금 물건이 만족해야 하는 **사양** |
+| `docs/BUILD-LOG.md` | 경위와 **실패한 시도** |
+| `docs/PROGRESS.json` | 한 일과 **못 한 일** |
+
+이 구분이 핵심입니다. 계획서에 "10.2ms 였는데 0.27ms 로 고쳤다"고 적으면 그건 일지입니다. **"타임라인 한 번 그리기 0.3ms 이내"라고 적어야** 다음 프로젝트에서 꺼내 쓸 수 있는 설계도가 됩니다.
+
+**못 고친 것도 `done: false` 로 남깁니다.** 지우면 없던 일이 됩니다.
+
+**누르기 전까지 문서는 손대지 않습니다.** 먼저 고쳐 두고 나중에 무르는 방식은, 아닌 내용이 잠깐이라도 계획서에 남습니다.
 
 <a name="menu-docs"></a>
 
