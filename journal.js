@@ -187,8 +187,12 @@ const HEAD = `# 변경 기록
 **개발 현황** 창에서 추리고, \`계획서에 반영\` 을 누르면 **반영 대기** 항목만
 개발 계획서 · 개발 현황 · 개발 일지로 들어갑니다.
 
+항목 줄은 지시 한 문장입니다 — **어떤 부분을 · 어떻게 되도록 · 어떤 식으로** 처리해
+달라. 대화창에 친 말은 증상이고, 어디를 만져야 하는지는 코드에서 확인해 여기 합칩니다.
+반영한 뒤에는 실제로 무엇을 고쳤는지가 두 칸 들여쓴 \`결과:\` 로 따라붙습니다.
+
 손으로 고쳐도 됩니다. 다만 이 파일을 다시 쓸 때 지켜지는 것은 \`- [ ]\` 로 시작하는
-항목 줄뿐입니다 — 따로 적어 둔 설명은 남지 않습니다.
+항목 줄과 그 아래 \`결과:\` 줄뿐입니다 — 따로 적어 둔 설명은 남지 않습니다.
 `;
 
 const MARK = "<!-- buildstudio:collected=";
@@ -197,7 +201,12 @@ function changesFile(fsPath) {
   return path.join(fsPath, CHANGES);
 }
 
-/** 항목 하나의 이름표. 파일을 다시 써도 같은 항목이면 같은 값이 나와야 한다. */
+/**
+ * 항목 하나의 이름표. 파일을 다시 써도 같은 항목이면 같은 값이 나와야 한다.
+ *
+ * 이름은 항목 줄에서 만든다. 다듬어 글자가 바뀌면 이름도 바뀌는데, 화면은 파일이
+ * 바뀔 때마다 다시 그리므로 누르는 시점의 이름은 늘 파일과 같다.
+ */
 function idOf(at, text) {
   return crypto
     .createHash("sha1")
@@ -217,7 +226,7 @@ function stamp(at) {
 /**
  * 파일을 읽어 항목으로 바꾼다. 없으면 빈 모음.
  *
- * @returns {{collected: string, items: {id, at, when, text, state}[]}}
+ * @returns {{collected: string, items: {id, at, when, text, results, state}[]}}
  */
 function parse(raw) {
   const model = { collected: "", items: [] };
@@ -229,11 +238,16 @@ function parse(raw) {
   if (m) model.collected = m[1];
 
   let section = WAITING;
+
+  // 방금 읽은 글자가 어디에 붙는지. 이어지는 줄을 그 자리에 마저 넣는다.
+  let cursor = null;
+
   for (const line of raw.split("\n")) {
     const h = line.match(/^##\s+(.+?)\s*$/);
     if (h) {
       const name = h[1].trim();
       section = SECTIONS.includes(name) ? name : section;
+      cursor = null;
       continue;
     }
     // - [ ] `09-06 21:12` 타임라인을 끌면 한참 뒤에 따라와요
@@ -241,23 +255,63 @@ function parse(raw) {
     // 앞의 홑따옴표 묶음은 시각으로 보이는 것만 시각으로 친다. 그러지 않으면
     // 코드 조각으로 시작하는 항목(`grab()` 이 ...)의 첫 낱말이 시각 자리로 빨려 들어간다.
     const it = line.match(/^-\s+\[( |x|X)\]\s+(.*)$/);
-    if (!it) continue;
-    let rest = it[2].trim();
-    let when = "";
-    const w = rest.match(/^`(\d{2}-\d{2} \d{2}:\d{2})`\s+([\s\S]*)$/);
-    if (w) {
-      when = w[1];
-      rest = w[2].trim();
+    if (it) {
+      let rest = it[2].trim();
+      let when = "";
+      const w = rest.match(/^`(\d{2}-\d{2} \d{2}:\d{2})`\s+([\s\S]*)$/);
+      if (w) {
+        when = w[1];
+        rest = w[2].trim();
+      }
+      if (!rest) continue;
+      model.items.push({ id: "", at: "", when, text: rest, results: [], state: section });
+      cursor = { item: model.items[model.items.length - 1], field: "text" };
+      continue;
     }
-    const text = rest;
-    if (!text) continue;
-    model.items.push({
-      id: idOf(when, text),
-      at: "",
-      when,
-      text,
-      state: section,
-    });
+
+    //   - 결과: 매 프레임 다시 그리던 타임라인 seek 을 rAF 로 묶었다 (player.js).
+    //
+    // 바로 앞 항목에 딸린 줄이다. 다른 말머리는 사람이 적어 둔 설명이므로 흘려보낸다.
+    const sub = line.match(/^\s+-\s+(원문|결과):\s*(.*)$/);
+    if (sub && model.items.length) {
+      // 원문 은 예전 형식이다. 읽되 남기지 않는다 — 이어지는 줄이 항목 줄에 잘못
+      // 붙는 것만 여기서 끊어 준다.
+      if (sub[1] === "원문") {
+        cursor = null;
+        continue;
+      }
+      const last = model.items[model.items.length - 1];
+      const val = sub[2].trim();
+      if (!val) continue;
+      last.results.push(val);
+      cursor = { item: last, field: "results", at: last.results.length - 1 };
+      continue;
+    }
+
+    // 이어지는 줄. 항목 줄이 지시 한 문장이라 길어서, 편집기에서 손으로 접어 두기 쉽다.
+    // 흘려보내면 다시 쓸 때 뒷부분이 통째로 사라진다 — 앞줄에 마저 붙인다.
+    const more = line.match(/^\s+(\S.*)$/);
+    if (more && cursor) {
+      const val = more[1].trim();
+      if (val) {
+        if (cursor.field === "results") cursor.item.results[cursor.at] += " " + val;
+        else cursor.item[cursor.field] += " " + val;
+      }
+      continue;
+    }
+
+    // 빈 줄이거나 들여쓰지 않은 글. 앞 항목과의 연결이 여기서 끊긴다.
+    cursor = null;
+  }
+
+  // 같은 시각에 같은 글이 두 번 적힐 수 있다. 그때 이름표가 겹치면 체크 하나가
+  // 다른 항목을 옮긴다. 두 번째부터는 번호를 붙여 갈라 준다.
+  const nth = new Map();
+  for (const i of model.items) {
+    const key = i.when + "|" + i.text;
+    const n = nth.get(key) || 0;
+    nth.set(key, n + 1);
+    i.id = idOf(i.when, n ? `${i.text}#${n}` : i.text);
   }
   return model;
 }
@@ -278,6 +332,7 @@ function render(model) {
       const box = name === APPLIED ? "x" : " ";
       const when = i.when ? "`" + i.when + "` " : "";
       lines.push(`- [${box}] ${when}${i.text}`);
+      for (const r of i.results || []) lines.push(`  - 결과: ${r}`);
     }
     lines.push("");
   }
@@ -312,14 +367,19 @@ function collect(fsPath) {
   const since = model.collected ? Date.parse(model.collected) : 0;
   const fresh = collectFrom(fsPath, since || 0);
 
+  // 이미 적힌 말은 다시 넣지 않는다. 다만 다듬고 나면 항목 줄이 바뀌므로 이 견줌은
+  // 다듬기 전에만 듣는다 — 다듬은 뒤로는 위의 collected 시각이 막아 준다.
   const known = new Set(model.items.map((i) => i.text));
+
   let added = 0;
   for (const f of fresh) {
     const text = f.text.replace(/\s+/g, " ").trim();
     if (!text || known.has(text)) continue;
     known.add(text);
     const when = stamp(f.at);
-    model.items.push({ id: idOf(when, text), at: f.at, when, text, state: WAITING });
+    // 모으는 시점에는 친 말 그대로다. [대화에서 모으기] 가 이어서 시키는 다듬기가
+    // 이 줄을 지시문으로 바꿔 쓴다 — 그때까지도 사람이 읽을 수 있는 글이다.
+    model.items.push({ id: idOf(when, text), at: f.at, when, text, results: [], state: WAITING });
     added++;
   }
 
@@ -350,7 +410,7 @@ function add(fsPath, text) {
   const model = read(fsPath);
   if (model.items.some((i) => i.text === clean)) return;
   const when = stamp(new Date().toISOString());
-  model.items.push({ id: idOf(when, clean), at: "", when, text: clean, state: WAITING });
+  model.items.push({ id: idOf(when, clean), at: "", when, text: clean, results: [], state: WAITING });
   write(fsPath, model);
 }
 

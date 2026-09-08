@@ -327,6 +327,43 @@ function skillFile(name) {
   return path.join(__dirname, "skills", "buildplanner", "skills", name, "SKILL.md");
 }
 
+/** 같은 지시서가 Claude 쪽에 깔린 자리. 여기 있어야 슬래시 명령으로 알아듣는다. */
+function claudeSkillFile(name) {
+  return path.join(
+    os.homedir(), ".claude", "skills", "buildplanner", "skills", name, "SKILL.md"
+  );
+}
+
+/**
+ * 이 슬래시 명령을 Claude 가 알아들을 수 있는 상태인지.
+ *
+ * 새 PC 에서 `Unknown command: /buildplanner:plan` 이 뜨던 자리다. 슬래시 명령은
+ * 지시서 파일이 `~/.claude/skills` 에 있어야 생기는데, 확장은 그것을 확인하지 않고
+ * 무조건 슬래시 명령을 적어 넣었다. 그러면 Enter 를 눌러도 한 줄 오류로 끝나고,
+ * 화면의 단계 표시는 아무것도 시작되지 않은 채로 계속 돈다 — 가장 알아채기 어려운
+ * 실패다.
+ *
+ * 두 가지를 본다.
+ *
+ * - **파일이 그 자리에 있는가.** 없으면 명령도 없다.
+ * - **이번에 방금 깔았는가.** Claude 는 대화를 시작할 때 지시서 목록을 한 번 읽는다.
+ *   확장이 VS Code 를 켜면서 처음 깔았다면, 이미 떠 있는 Claude 창은 그것을 모른다.
+ *   이번 판에서는 파일로 넘기고, 다음에 켤 때부터 슬래시 명령을 쓴다.
+ *
+ * 아니라고 판단하면 `forFileEngine` 이 "이 파일을 읽고 그대로 따라라" 로 바꾼다.
+ * 슬래시 명령이 없어도 같은 절차를 밟는다.
+ */
+function slashCommandWorks(prompt) {
+  const m = String(prompt).match(/^\/buildplanner:([a-z]+)/);
+  if (!m) return true; // 슬래시 명령이 아니면 바꿀 것이 없다
+  if (skillsJustInstalled) return false;
+  try {
+    return fs.existsSync(claudeSkillFile(m[1]));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * `/buildplanner:plan 아이디어` 를 스킬을 모르는 엔진이 알아들을 말로 바꾼다.
  *
@@ -352,6 +389,14 @@ function runInTerminal(prompt, label, cwd, choice) {
     const key = engines.geminiKey();
     if (key) env.GEMINI_API_KEY = key;
   }
+
+  // CLI 가 PATH 밖에서 찾힌 경우 그 자리를 PATH 앞에 얹는다. 터미널도 확장 호스트의
+  // PATH 를 물려받으므로, 이게 없으면 확장은 "준비됨" 이라 해놓고 정작 터미널에서는
+  // "claude 은(는) 내부 또는 외부 명령이 아닙니다" 로 끝난다. 명령줄에 전체 경로를
+  // 박지 않고 PATH 로 푸는 이유는 셸마다 따옴표 규칙이 달라서다 — cmd 와 PowerShell 이
+  // 공백 든 경로를 다르게 읽는다.
+  const dir = engines.status(choice.engine).binDir;
+  if (dir) env.PATH = dir + path.delimiter + (process.env.PATH || "");
 
   const terminal = vscode.window.createTerminal({
     name: `${choice.engine.label} · ${label}`,
@@ -382,7 +427,8 @@ async function runClaude(prompt, label) {
   if (!folder) return null;
 
   const choice = planChoice();
-  const text = choice.id === "claude" ? prompt : forFileEngine(prompt);
+  const text =
+    choice.id === "claude" && slashCommandWorks(prompt) ? prompt : forFileEngine(prompt);
 
   // 고른 것이 준비되지 않아 다른 엔진으로 넘어갔다면 말해준다. 조용히 바꿔 돌리면
   // 왜 결과가 달라졌는지 알 길이 없다.
@@ -800,13 +846,91 @@ const TARGETS = {
 /** 개발 서버가 흔히 쓰는 포트. 먼저 응답하는 것을 쓴다. */
 const PORTS = [5173, 3000, 8080, 4200, 5000, 8000, 1420];
 
-/** package.json 에서 개발 서버 명령을 찾는다. 없으면 사용자가 직접 넣게 한다. */
+/**
+ * 앱 창을 직접 여는 스크립트인가.
+ *
+ * 이름이 아니라 스크립트가 실제로 무엇을 부르는지로 판단한다 — 데스크톱 앱의
+ * 실행 스크립트 이름은 프로젝트마다 제각각이지만(electron:dev, dev:electron,
+ * tauri:dev, dev:start …) 본문에는 반드시 electron 이나 tauri 가 나온다.
+ * electron-builder 는 패키징 도구라 세지 않는다.
+ */
+const OPENS_APP = /\b(electron|tauri)\b(?!-)/;
+
+/**
+ * 실행 스크립트를 고를 순서.
+ *
+ * 위에 있을수록 "이 프로젝트를 실행한다"는 뜻으로 쓰이는 이름이다. 여기 없는
+ * 이름을 쓰는 프로젝트를 위해 뒤에 이름 패턴 검색을 한 번 더 돌린다.
+ */
+const DEV_SCRIPT_ORDER = [
+  "dev",
+  "start",
+  "dev:start",
+  "start:dev",
+  "electron:dev",
+  "dev:electron",
+  "electron-dev",
+  "start:electron",
+  "tauri:dev",
+  "dev:tauri",
+  "app:dev",
+  "desktop:dev",
+  "serve",
+];
+
+/**
+ * package.json 에서 실행 명령을 찾는다. 없으면 사용자가 직접 넣게 한다.
+ *
+ * `{ cmd, opensWindow }` 를 돌려준다. opensWindow 는 그 명령이 자기 앱 창을
+ * 직접 여는지 — Electron·Tauri 프로젝트에서 `dev` 가 개발 서버(vite)만 띄우는
+ * 경우가 흔해서, 그것만 실행하면 브라우저 미리보기는 떠도 정작 앱은 뜨지 않는다.
+ * 그래서 창을 여는 스크립트가 있으면 그쪽을 먼저 고른다.
+ */
+/**
+ * 스크립트가 감싸고 있는 로컬 파일을 한 겹 열어 본다.
+ *
+ * `"dev": "node scripts/dev.mjs"` 처럼 실행을 파일로 넘기는 프로젝트가 흔하다.
+ * package.json 만 봐서는 그 안에서 앱 창을 여는지 알 수 없어, 실제로는 앱이
+ * 뜨는데도 개발 서버로만 알고 미리보기를 띄우게 된다. 한 겹만 본다 — 그 파일이
+ * 또 다른 파일을 부르는 경우까지 따라가지는 않는다.
+ */
+function opensAppViaFile(folderPath, body) {
+  const m = String(body || "").match(/[\w./\\-]+\.(?:mjs|cjs|js|ts)\b/);
+  if (!m) return false;
+  try {
+    const p = path.join(folderPath, m[0]);
+    if (!fs.existsSync(p) || fs.statSync(p).size > 512 * 1024) return false;
+    return OPENS_APP.test(fs.readFileSync(p, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
 function detectDevCommand(folderPath) {
   try {
     const pkg = readJson(path.join(folderPath, "package.json"));
     const s = pkg.scripts || {};
+    const opens = (name) =>
+      OPENS_APP.test(String(s[name] || "")) || opensAppViaFile(folderPath, s[name]);
+
+    // 1) 창을 여는 스크립트 — 정해둔 순서로 먼저, 없으면 dev/start/serve 가
+    //    들어간 아무 이름이나 (dev:desktop, run-electron 같은 것들).
+    const named = DEV_SCRIPT_ORDER.filter((n) => s[n]).find(opens);
+    const guessed =
+      named ||
+      Object.keys(s)
+        .filter((n) => /(^|[:_-])(dev|start|serve|run)([:_-]|$)/i.test(n))
+        .find(opens);
+    if (guessed) return { cmd: `npm run ${guessed}`, opensWindow: true };
+
+    // 2) Tauri 기본 스캐폴드는 `"tauri": "tauri"` 하나만 두고 `npm run tauri dev`
+    //    로 띄운다 — 앱을 여는 스크립트가 package.json 에 따로 없다.
+    if (s.tauri && fs.existsSync(path.join(folderPath, "src-tauri")))
+      return { cmd: "npm run tauri dev", opensWindow: true };
+
+    // 3) 창을 여는 것이 없으면 평범한 개발 서버.
     for (const name of ["dev", "start", "serve"]) {
-      if (s[name]) return `npm run ${name}`;
+      if (s[name]) return { cmd: `npm run ${name}`, opensWindow: false };
     }
   } catch {
     /* package.json 이 없는 프로젝트도 있다 */
@@ -872,13 +996,19 @@ let devTerminal = null;
  *
  * 포트를 미리 정해두지 않고 실제로 열린 포트를 찾는다. 프로젝트마다 다르고(Vite 5173,
  * Next 3000, ...) 설정으로 바뀌기도 해서, 추측한 주소를 열면 빈 화면만 나온다.
+ *
+ * 데스크톱 앱(Electron·Tauri)은 스스로 창을 연다. 그때는 포트를 기다리지도,
+ * 미리보기를 열지도 않는다 — 앱 창 옆에 같은 화면이 하나 더 뜨는 것도 성가시고,
+ * 무엇보다 그 안에서는 앱이 쓰는 네이티브 API 가 없어 대부분의 기능이 죽는다.
  */
 async function runDev(target, command) {
   const folder = root();
   if (!folder) return;
 
-  const cmd = command || detectDevCommand(folder.uri.fsPath);
-  if (!cmd) {
+  const found = command
+    ? { cmd: command, opensWindow: false }
+    : detectDevCommand(folder.uri.fsPath);
+  if (!found) {
     await tell(
       "실행할 명령을 찾지 못했습니다",
       `${folder.uri.fsPath}
@@ -887,6 +1017,7 @@ package.json 의 scripts 에 dev / start / serve 중 하나가 있어야 합니�
     );
     return;
   }
+  const { cmd, opensWindow } = found;
 
   if (!(await ensureTrust("Dev 모드로 실행"))) return;
 
@@ -900,6 +1031,11 @@ package.json 의 scripts 에 dev / start / serve 중 하나가 있어야 합니�
     cwd: folder.uri.fsPath,
   });
   devTerminal.sendText(cmd);
+
+  if (opensWindow) {
+    devTerminal.show();
+    return;
+  }
 
   const port = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: "개발 서버를 기다리는 중…" },
@@ -2206,10 +2342,10 @@ function html(openWith) {
     <div class="runner" id="runner">
       <p class="runner-title">실행</p>
       <p class="runner-body">
-        개발 서버를 띄우고 고른 방식으로 엽니다.<br>
+        <span id="runnerLead">개발 서버를 띄우고 고른 방식으로 엽니다.</span><br>
         <code id="runnerCmd"></code>
       </p>
-      <label class="q-label">어디에 열까요?</label>
+      <label class="q-label" id="runnerWhere">어디에 열까요?</label>
       <div class="q-opts" id="runnerTargets">
         ${Object.entries(TARGETS)
           .map(
@@ -2292,7 +2428,10 @@ function html(openWith) {
 
 <script>
   const vscode = acquireVsCodeApi();
-  const DEV_COMMAND = ${JSON.stringify(hasFolder ? detectDevCommand(root().uri.fsPath) : null)};
+  const DEV = ${JSON.stringify(hasFolder ? detectDevCommand(root().uri.fsPath) : null)};
+  const DEV_COMMAND = DEV ? DEV.cmd : null;
+  // 앱이 스스로 창을 여는 프로젝트(Electron·Tauri)는 열 자리를 고를 필요가 없다.
+  const DEV_OPENS_WINDOW = !!(DEV && DEV.opensWindow);
   const GH = ${JSON.stringify(hasFolder ? ghState(root().uri.fsPath) : {})};
   const ACTIONS = ${JSON.stringify(
     Object.assign(
@@ -2452,8 +2591,14 @@ function html(openWith) {
 
   function askRun() {
     runTarget = null;
-    runnerGo.disabled = true;
+    runnerGo.disabled = !DEV_OPENS_WINDOW;
     document.getElementById("runnerCmd").textContent = DEV_COMMAND || "(명령을 찾지 못했습니다)";
+    document.getElementById("runnerLead").textContent = DEV_OPENS_WINDOW
+      ? "앱을 실행합니다. 창은 앱이 직접 엽니다."
+      : "개발 서버를 띄우고 고른 방식으로 엽니다.";
+    // display 로 감춘다 — .q-opts 가 CSS 에서 display 를 지정하고 있어 hidden 은 먹지 않는다.
+    document.getElementById("runnerWhere").style.display = DEV_OPENS_WINDOW ? "none" : "";
+    document.getElementById("runnerTargets").style.display = DEV_OPENS_WINDOW ? "none" : "";
     for (const o of document.querySelectorAll("#runnerTargets .opt")) o.classList.remove("on");
     hideMain();
     runner.classList.add("open");
@@ -2918,6 +3063,47 @@ async function pickEngines() {
     };
   };
 
+  /**
+   * 준비되지 않은 것을 골랐을 때 그 자리에서 해결할 길을 낸다.
+   *
+   * 전에는 고른 것이 설정에 저장되고 끝이었다. 무엇이 모자란지는 둘째 줄에 적혀
+   * 있었지만, 그걸 읽고 터미널을 열어 명령을 옮겨 치는 것은 사람 몫이었다 — 설치와
+   * 로그인은 BUILD STUDIO 를 처음 켠 사람이 반드시 지나는 자리인데, 거기서 사람을
+   * 화면 밖으로 내보낸 셈이다.
+   */
+  const offerSetup = async (engine) => {
+    const s = engines.status(engine);
+    if (s.ready) return;
+
+    // 무엇이 모자란지에 따라 다른 것을 권한다. 안 깔린 것을 로그인시켜봐야 소용없다.
+    const npm = !s.installed && /^npm /.test(engine.install || "");
+    const cmd = s.installed ? engine.loginCmd : npm ? engine.install : "";
+    const what = s.installed ? "로그인" : "설치";
+
+    // Gemini 이미지처럼 CLI 가 아니라 설정에 키를 넣어야 하는 것은 터미널로 안 된다.
+    if (!cmd) {
+      vscode.window.showWarningMessage(
+        engine.label + " — " + (s.installed ? engine.login : engine.install)
+      );
+      return;
+    }
+
+    const go = await vscode.window.showWarningMessage(
+      engine.label + " 은(는) " + engines.statusText(s) + " 입니다.",
+      { detail: engine.login },
+      "터미널에서 " + what
+    );
+    if (!go) return;
+
+    const terminal = vscode.window.createTerminal(engine.label + " · " + what);
+    terminal.show();
+    terminal.sendText(cmd);
+    // probe 는 찾은 것만 기억하므로, 끝난 뒤 다시 열기만 하면 새로 확인한다.
+    vscode.window.showInformationMessage(
+      what + "가 끝나면 [AI 모델 고르기] 를 다시 열어 확인하세요."
+    );
+  };
+
   const auto = (table, order) => ({
     id: "auto",
     label: "자동",
@@ -2936,6 +3122,7 @@ async function pickEngines() {
   );
   if (!plan) return;
   await cfg.update("planEngine", plan.id, vscode.ConfigurationTarget.Global);
+  if (plan.id !== "auto") await offerSetup(engines.PLAN_ENGINES[plan.id]);
 
   const image = await vscode.window.showQuickPick(
     [
@@ -2948,6 +3135,7 @@ async function pickEngines() {
   );
   if (!image) return;
   await cfg.update("imageEngine", image.id, vscode.ConfigurationTarget.Global);
+  if (image.id !== "auto") await offerSetup(engines.IMAGE_ENGINES[image.id]);
 
   const now = engineLine();
   vscode.window.showInformationMessage(now);
@@ -2966,6 +3154,12 @@ function engineLine() {
   };
   return "설계 " + mark(plan) + " · 이미지 " + mark(image);
 }
+
+/**
+ * 이번에 켜면서 지시서를 새로 깔았는지. 이미 떠 있는 Claude 창은 그것을 모르므로,
+ * 이 판에서는 슬래시 명령 대신 파일로 넘긴다.
+ */
+let skillsJustInstalled = false;
 
 /**
  * 함께 나온 지시서를 Claude 쪽에도 깔아둔다.
@@ -2990,6 +3184,7 @@ function installSkills() {
       const dst = path.join(to, name);
       if (!fs.statSync(src).isDirectory() || fs.existsSync(dst)) continue;
       fs.cpSync(src, dst, { recursive: true });
+      skillsJustInstalled = true;
     }
   } catch {
     /* 못 깔아도 파일 경로로 넘기는 길이 남아 있다 */

@@ -86,6 +86,8 @@ const PLAN_ENGINES = {
     skills: "native",
     install: "npm install -g @anthropic-ai/claude-code",
     login: "터미널에서 claude 를 실행하고 /login",
+    // 화면에서 바로 돌려줄 명령. 안내 문구와 달리 이건 셸에 그대로 들어간다.
+    loginCmd: "claude",
     auth: () => ({
       ok:
         exists(".claude", ".credentials.json") ||
@@ -112,6 +114,7 @@ const PLAN_ENGINES = {
     skills: "file",
     install: "npm install -g @openai/codex",
     login: "터미널에서 codex login",
+    loginCmd: "codex login",
     auth: () => ({ ok: exists(".codex", "auth.json") || !!process.env.OPENAI_API_KEY }),
     // --search 를 켜야 웹을 찾아본다. 계획·역설계는 조사가 절반이라 이게 없으면
     // 아는 것만 가지고 쓴 문서가 나온다.
@@ -131,6 +134,7 @@ const PLAN_ENGINES = {
     skills: "file",
     install: "npm install -g @google/gemini-cli",
     login: "터미널에서 gemini 로그인, 또는 설정 buildstudio.geminiApiKey 에 API 키",
+    loginCmd: "gemini",
     /**
      * 개인 Google 계정 OAuth 는 Gemini Code Assist 개인용이 닫히면서 거부되기
      * 시작했다. 로그인 파일은 그대로 남아 있어서 존재만 보면 "로그인돼 있음" 인데,
@@ -175,6 +179,7 @@ const IMAGE_ENGINES = {
     bin: "codex",
     install: "npm install -g @openai/codex",
     login: "터미널에서 codex login",
+    loginCmd: "codex login",
     auth: () => ({ ok: exists(".codex", "auth.json") || !!process.env.OPENAI_API_KEY }),
   },
 
@@ -192,29 +197,103 @@ const IMAGE_ENGINES = {
   },
 };
 
-/** `--version` 이 대답하는지. 한 세션에 한 번만 물어본다. */
-const versionCache = new Map();
+/**
+ * PATH 에 없을 때 들여다볼 자리들.
+ *
+ * 확장이 쓰는 PATH 는 VS Code 가 뜰 때 물려받은 것이다. `npm install -g` 가 PATH 를
+ * 바꾸는 것은 그 뒤라, 이미 떠 있는 VS Code 는 옛 PATH 를 그대로 쓴다 — 터미널에서는
+ * `claude --version` 이 되는데 확장에서만 "설치 안 됨" 이 되는 자리다. 윈도우는 PATH
+ * 변경이 새로 뜨는 프로세스에만 적용되므로, VS Code 를 껐다 켜도 안 되는 일이 있다.
+ *
+ * 그래서 PATH 가 모르면 흔히 깔리는 자리를 직접 본다.
+ */
+const BIN_DIRS = WIN
+  ? [
+      [process.env.APPDATA || at("AppData", "Roaming"), "npm"],
+      [process.env.ProgramFiles || "C:\Program Files", "nodejs"],
+      [HOME, "AppData", "Local", "pnpm"],
+      [HOME, ".bun", "bin"],
+      [HOME, ".volta", "bin"],
+    ]
+  : [
+      ["/usr/local/bin"],
+      ["/opt/homebrew/bin"],
+      [HOME, ".npm-global", "bin"],
+      [HOME, ".local", "bin"],
+      [HOME, ".bun", "bin"],
+      [HOME, ".volta", "bin"],
+    ];
 
-function probe(bin) {
-  if (!bin) return { ok: true, version: "" };
-  if (versionCache.has(bin)) return versionCache.get(bin);
+/** 윈도우의 전역 npm 명령은 `.cmd` 껍데기다. 확장자 없는 것은 셸 스크립트라 건너뛴다. */
+const BIN_EXTS = WIN ? [".cmd", ".exe", ".bat"] : [""];
 
-  let result = { ok: false, version: "" };
+/** PATH 밖에서 실행 파일을 찾는다. 찾으면 전체 경로, 없으면 빈 문자열. */
+function findBin(bin) {
+  for (const dir of BIN_DIRS) {
+    for (const ext of BIN_EXTS) {
+      try {
+        const p = path.join(...dir, bin + ext);
+        if (fs.existsSync(p)) return p;
+      } catch {
+        /* 접근할 수 없는 자리는 넘어간다 */
+      }
+    }
+  }
+  return "";
+}
+
+/** `--version` 이 대답하는지 한 번 물어본다. 대답한 실행 경로까지 함께 돌려준다. */
+function ask(cmd) {
   try {
     // 윈도우의 전역 npm 명령은 .cmd 껍데기라 cmd 를 거치지 않으면 찾히지 않는다.
+    //
+    // windowsVerbatimArguments 를 켠다. 켜지 않으면 Node 가 따옴표를 한 번 더 감싸고
+    // cmd 는 그것을 명령 이름의 일부로 읽어 "찾을 수 없습니다" 로 끝난다. 켜면 우리가
+    // 적은 그대로 넘어가므로, cmd 가 요구하는 바깥 따옴표까지 직접 두른다 —
+    // `cmd /c ""C:Program Files...claude.cmd" --version"`. 공백이 든 경로도 이걸로 산다.
     const out = WIN
-      ? spawnSync("cmd", ["/c", bin + " --version"], { encoding: "utf8", timeout: 8000 })
-      : spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 8000 });
+      ? spawnSync("cmd", ["/c", '""' + cmd + '" --version"'], {
+          encoding: "utf8",
+          timeout: 8000,
+          windowsVerbatimArguments: true,
+        })
+      : spawnSync(cmd, ["--version"], { encoding: "utf8", timeout: 8000 });
     const text = String((out.stdout || "") + (out.stderr || "")).trim();
     if (out.status === 0 && text) {
-      result = { ok: true, version: text.split(/\r?\n/)[0].slice(0, 40) };
+      return { ok: true, version: text.split(/\r?\n/)[0].slice(0, 40), cmd };
     }
   } catch {
     /* 못 찾으면 안 깔린 것으로 본다 */
   }
+  return null;
+}
 
-  versionCache.set(bin, result);
-  return result;
+/**
+ * `--version` 이 대답하는지. **찾은 것만 기억한다.**
+ *
+ * 전에는 못 찾은 것도 기억했다. 그래서 처음 열었을 때 "설치 안 됨" 이 나오면, 터미널에서
+ * 깔고 로그인한 뒤 `AI 모델 고르기` 를 다시 열어도 계속 "설치 안 됨" 이었다 — 창을
+ * 새로고침해야만 바뀌니, 몇 번을 로그인해도 안 잡히는 것처럼 보인다.
+ *
+ * 못 찾은 것을 다시 물어보는 값은 싸다. 없는 명령은 26ms 만에 끝난다. 반면 찾은 것을
+ * 다시 물어보는 것은 비싸서(Gemini CLI 는 1.5초) 화면이 멈춘다. 그래서 성공만 남긴다.
+ */
+const versionCache = new Map();
+
+function probe(bin) {
+  if (!bin) return { ok: true, version: "", cmd: "" };
+  if (versionCache.has(bin)) return versionCache.get(bin);
+
+  // PATH 로 먼저. 안 되면 흔히 깔리는 자리에서 찾아 전체 경로로 한 번 더.
+  let found = ask(bin);
+  if (!found) {
+    const p = findBin(bin);
+    if (p) found = ask(p);
+  }
+  if (!found) return { ok: false, version: "", cmd: "" };
+
+  versionCache.set(bin, found);
+  return found;
 }
 
 /**
@@ -234,6 +313,9 @@ function status(engine) {
   return {
     installed: found.ok,
     version: found.version,
+    // PATH 밖에서 찾아낸 경우, 그 실행 파일이 든 폴더. 터미널의 PATH 앞에 얹어야
+    // 터미널도 같은 것을 찾는다 — 터미널 역시 확장 호스트의 PATH 를 물려받는다.
+    binDir: found.cmd && found.cmd !== engine.bin ? path.dirname(found.cmd) : "",
     loggedIn: !!auth.ok,
     note: auth.note || "",
     ready: found.ok && !!auth.ok,

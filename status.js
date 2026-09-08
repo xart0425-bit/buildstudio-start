@@ -28,6 +28,37 @@ const REFINE_PROMPT =
   "개발 계획서와 개발 현황, 개발 일지에 반영해줘.";
 
 /**
+ * 모아 온 말을 지시 한 문장으로 다듬으라는 말.
+ *
+ * 모으는 일은 대화 기록을 훑는 것이라 코드만으로 되지만, 요청을 지시문으로 바꾸는 것은
+ * 뜻을 읽고 코드를 봐야 한다. 그래서 모은 직후에 이 말을 한 번 보낸다.
+ *
+ * **요청과 원인을 한 문장에 합친다.** 사람이 친 말은 증상이고, 어디를 만져야 하는지는
+ * 코드에 있다. 둘을 따로 두면 반영할 때 그 조사를 처음부터 다시 한다. 그래서 여기서
+ * 코드를 열어 확인한 다음 `어떤 부분을 + 어떻게 되도록 + 어떤 식으로` 로 적게 시킨다.
+ *
+ * 이 다듬기는 **친 말을 덮어쓴다.** 원문을 따로 남기지 않으므로 잘못 줄이면 돌아갈
+ * 곳이 없다. 그래서 뜻을 바꾸지 말고, 확실하지 않은 대목은 사람의 표현을 그대로 살려
+ * 문장으로만 만들라고 못 박는다. 확인 못 한 원인을 지어내는 것도 같은 이유로 막는다.
+ *
+ * 프롬프트는 터미널로 나갈 수 있으므로 홑따옴표와 따옴표를 쓰지 않는다.
+ */
+const TIDY_PROMPT =
+  "docs/CHANGES.md 의 반영 대기 항목을 다듬어줘. " +
+  "항목마다 시각 표시 뒤의 글을 지시 한 문장으로 고쳐 써. " +
+  "문장에는 어떤 부분을, 어떻게 되도록, 어떤 식으로 처리해달라 셋을 함께 담아. " +
+  "예: 타임라인 슬라이더는 끄는 동안 화면이 한 프레임 안에 따라오도록, " +
+  "이동마다 전체를 다시 그리는 seek 을 requestAnimationFrame 으로 묶어서 처리해주세요. " +
+  "어떤 식으로 는 짐작하지 말고 코드를 열어 원인을 확인한 다음 적어. " +
+  "확인이 안 되면 그 대목은 빼고 어떤 부분과 어떻게 되도록 만 적어 — 지어내지 마. " +
+  "친 말은 따로 남지 않고 이 문장으로 덮어써지니까 뜻을 바꾸지 마. " +
+  "확실하지 않은 대목은 사람이 쓴 표현을 그대로 살려서 문장으로만 만들어. " +
+  "한 번에 여러 가지를 시킨 항목은 고치는 자리가 다르면 항목을 나눠도 돼. " +
+  "보류와 반영함 절, 그리고 이미 다듬어진 항목은 건드리지 마. " +
+  "고쳐 달라는 요청이 아닌 잡담이나 질문은 보류 절로 옮겨줘. " +
+  "코드는 읽기만 하고 고치지 마. 고치는 것은 이 파일뿐이야.";
+
+/**
  * 현황 파일을 만들어 달라는 말.
  *
  * 빈 화면의 버튼과 extension.js 의 만들기가 같은 말을 써야 한다. 두 곳에 따로 적어 두면
@@ -151,7 +182,7 @@ function emptyHtml(webview, why) {
  * 계획서를 만든 뒤 대화창에서 시킨 수정이 여기 모인다. 사람이 체크로 추리고 누르면
  * 그때 문서로 간다 — 목업 검토 창과 같은 순서다. 누르기 전까지 계획서는 손대지 않는다.
  *
- * @param {{items: {id, when, text, state}[]}} changes docs/CHANGES.md 를 읽은 것
+ * @param {{items: {id, when, text, results, state}[]}} changes docs/CHANGES.md 를 읽은 것
  */
 function refineHtml(changes) {
   const items = (changes && changes.items) || [];
@@ -636,10 +667,13 @@ function show(root, run, modeApi) {
         );
       } else {
         vscode.window.showInformationMessage(
-          `${got.added}개를 모았습니다. 추린 다음 [계획서에 반영] 을 눌러주세요.`
+          `${got.added}개를 모았습니다. 원인까지 확인해 지시문으로 다듬은 뒤 추려서 [계획서에 반영] 을 눌러주세요.`
         );
       }
       paint(folder);
+      // 새로 온 것이 있으면 이어서 다듬는다. 모으기만 하면 목록이 대화 원문 더미가
+      // 되어, 어디를 어떻게 하자는 것인지 한눈에 읽히지 않는다.
+      if (got.added) await run(TIDY_PROMPT, "변경 기록 다듬기");
       return;
     }
 
@@ -744,4 +778,4 @@ function paint(folder) {
   else panel.webview.html = html(data, mode.get(), changes);
 }
 
-module.exports = { show, html, MAKE_PROMPT, REFINE_PROMPT, PROGRESS };
+module.exports = { show, html, MAKE_PROMPT, REFINE_PROMPT, TIDY_PROMPT, PROGRESS };
